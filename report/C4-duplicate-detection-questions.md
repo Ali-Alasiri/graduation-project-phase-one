@@ -2,7 +2,7 @@
 
 Owner: Ali. Status: questions list, 31 Oct 2026 (was due Thu 29 Oct). Answered in `C4-duplicate-detection.md`. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
 
-Already fixed by others: every device keeps a copy of the other devices' file lists (path, name, size, date, type, hash; no contents) (C2); exact copies need no AI, similar files need the AI device (B1 rule 4); photo previews may go to the AI device, not kept, with a switch per device (B1 v2, decision 14); nothing is deleted without the user's confirmation, and only by the device that owns the file (B1 decision 9).
+Starting points from others: every device keeps a copy of the other devices' file lists (path, name, size, date, type, hash; no contents) (C2); exact copies need no AI, similar files need the AI device (B1 rule 4); photo previews may go to the AI device, not kept, with a switch per device (approved in B1 v2's status line; decision 14 is still open on details); B1's safe assumption for decision 9, which C4 must turn into a decision: nothing is deleted without the user's confirmation, and only by the device that owns the file.
 
 ## A. Exact copies
 1. What counts as an exact copy: same bytes, whatever the name, folder or date?

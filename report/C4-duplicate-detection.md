@@ -15,7 +15,7 @@ Every device reads only **its own** files. From the shared file lists (C2) any d
 - Each hash is cached with (path, size, modified date), so an unchanged file is never read twice. **Change for C2:** the hash field is filled only when step 3 needs it, not for every file; reading every byte on every device (for example 500 GB on a PC) would cost hours of disk and battery [NOT CHECKED, not measured]. Mohammed to agree.
 - **When:** desktops and laptops in the background; Android while the app is open or the "stay connected" mode is on; iPhone/iPad only while the app is open (B6 choice 6) [Q2].
 - **Left out [Q3]:** files under 64 KB [PROPOSAL, the user can change it]; system and app folders (the indexing scope is C3's); files the system does not let us read; files that are only in the cloud. For iPhone photos stored only in iCloud ("Optimize iPhone Storage"), reading the original would need the internet: they are shown as "not on this device" and skipped [NOT CHECKED: how the app detects this].
-- **Off devices [Q4]:** steps 1 to 3 use the stored lists, so copies on a switched-off device are found from its last record, marked with its date (C3).
+- **Off devices [Q4]:** step 1 works from the stored lists alone. Steps 2 and 3 work only with hashes the off device computed before it went off; if a new file now matches a size that was unique back then, the group is shown as **"possible copy, check when *device* is back"** and confirmed when it reconnects. Records keep their date (C3).
 
 ## 3. Similar photos and videos (Q5 to Q8)
 Two methods, for two kinds of "similar" [Q5]:
@@ -28,7 +28,7 @@ Two methods, for two kinds of "similar" [Q5]:
 | Match | Hamming distance ≤ 5 [PROPOSAL] | cosine similarity ≥ 0.90 [PROPOSAL, tune on our own photos] |
 | Needs the AI device | no | yes |
 
-- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview (short side 256 px [PROPOSAL]) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core laptop, then only new photos (B6 point 2, estimate).
+- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview (short side 256 px [PROPOSAL]) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, plus making and sending previews, plus videos; then only new photos (B6 point 2, estimate).
 - **Comparing:** a new photo is compared with all stored vectors (100,000 × 512 multiplications, very small). A full rebuild compares all pairs as a matrix product in blocks: 100,000² ÷ 2 × 512 ≈ 2.6 × 10¹² multiply-adds, minutes on a laptop if run in ONNX Runtime [estimate, NOT CHECKED].
 - **Groups:** built around one photo; a photo joins only if it is similar to that photo, which avoids long chains of "A looks like B looks like C" [PROPOSAL].
 - **False groups [Q7]:** perceptual hashes ignore colour, so a black-and-white copy matches its colour original, and plain backgrounds match each other [1]. So the "same photo" group also needs equal aspect ratio (±2 %) [PROPOSAL], and "similar" groups are never deleted in bulk (section 5).
@@ -46,14 +46,14 @@ Two methods, for two kinds of "similar" [Q5]:
 - *Exact, on several devices:* suggest **keeping all** by default ("this may be your backup"). Offer "Free space on *device*": delete the copies on that device only where a copy stays on another device. Suggest the device with the least free space (needs free space in the device record, C3).
 - *Same photo / similar:* nothing is pre-selected. A star marks the best copy (highest resolution, then largest file, then newest), and the user ticks what to delete.
 
-**Who and how [Q13]:** only the device that **owns** the file deletes it, after the user confirmed (on any device). The file goes to the system's trash where there is one, not deleted for good [NOT CHECKED: trash access from Flutter on desktops]. On Android 11+ the app asks the system (`createTrashRequest`), which shows its own prompt; trashed items are kept typically 30 days [2][3]. On iPhone/iPad, photos are deleted through PhotoKit [4]; whether iOS shows its own prompt is [NOT CHECKED]. So deletes on a phone run when the user has the app open there.
+**Who and how [Q13]:** only the device that **owns** the file deletes it, after the user confirmed (on any device). The file goes to the system's trash where there is one, not deleted for good [NOT CHECKED: trash access from Flutter on desktops]. On Android 11+, photos and videos go through the system's trash request (`createTrashRequest`), which shows its own prompt that the app opens from its screen; trashed items are kept typically 30 days [2][3]. This covers media items only. Other files on Android, and everything on Android 7 to 10 (no trash), are deleted directly with "All files access" (B6 v0, source 13), so the app asks once more in its own words that this cannot be undone [PROPOSAL]. Whether the `MANAGE_MEDIA` permission (Android 12+) skips the system prompt is [NOT CHECKED] [2]. On iPhone/iPad, photos are deleted through PhotoKit [4]; whether iOS shows its own prompt is [NOT CHECKED]. So deletes on a phone run only when the user has the app open there.
 
 **Safety checks before every delete [Q14]:** the owning device (1) hashes its file again and stops if it changed; (2) confirms that the copy being kept still exists with the same hash: on the same device by reading it, on another device by asking that device now, over the trusted connection. If the other device does not answer, nothing is deleted: **the last copy is never deleted**.
 
-**Owner off or nobody there [Q15]:** the request waits as "Waiting for Laptop". Each device has a switch, **"My other devices may delete duplicates here"**, off by default (permission for C11). If it is on, the owner runs a waiting request within 7 days after the checks pass and shows a notice; if it is off, or the request is older, the owner asks its own user [PROPOSAL]. Every device keeps a deletion log for 30 days (what, when, asked by which device, which copy was kept) [PROPOSAL].
+**Owner off or nobody there [Q15]:** the request waits as "Waiting for Laptop". Each device has a switch, **"My other devices may delete duplicates here"**, off by default (permission for C11). If it is on, a desktop or laptop owner runs a waiting request within 7 days after the checks pass and shows a notice (phones still need their user, see above); if it is off, or the request is older, the owner asks its own user [PROPOSAL]. Every device keeps a deletion log for 30 days (what, when, asked by which device, which copy was kept) [PROPOSAL].
 
 ## 6. Storage (Q16 to Q18)
-- **Index (on every device, for every device's files, C3):** + partial hash (32 bytes, candidates only), full hash (32 bytes, candidates only), perceptual hash (32 bytes, photos). At most about 100 bytes per file, so up to 10 MB per 100,000 files [estimate] [Q16].
+- **Index (on every device, for every device's files, C3):** new: partial hash (32 bytes, candidates only) and perceptual hash (32 bytes, photos); C2's existing hash field holds the full SHA-256, filled only for candidates. At most 64 extra bytes per file, so up to about 6.4 MB per 100,000 files [estimate] [Q16].
 - **Groups:** exact and "same photo" groups are computed on each device from its own copy of the lists, so nothing extra is sent. "Similar" groups are sent by the AI device as small messages and kept with their date. The **ignore list** (each group stored as its members' hashes) is shared with all devices, so "ignore" works everywhere. **Vectors** stay on the AI device only: 2 KB per photo, about 200 MB per 100,000 photos; half with 16-bit numbers [PROPOSAL] [Q17].
 - **Recompute [Q18]:** when list changes arrive, only for the sizes and photos that changed. A new AI device rebuilds the vectors (C2). A removed device (C1): its files leave every group when its records are removed (C3 decides when).
 
@@ -65,16 +65,20 @@ sequenceDiagram
   actor U as User
   participant P as Phone: UI and C4 module
   participant PC as Phone: communication layer
+  participant LC as Laptop: communication layer
   participant L as Laptop: C4 module
   participant OS as Android system
   U->>P: open Duplicates, choose "delete phone copy, keep laptop copy"
   P->>U: confirm? (space freed, which copy is kept)
   U->>P: confirm
   P->>PC: ask the laptop: do you still have path X with hash H?
-  PC->>L: request over the trusted connection (C1)
+  PC->>LC: request over the trusted connection (C1)
   alt laptop online
+    LC->>L: request
     L->>L: hash its file again
-    L-->>P: yes, hash H
+    L-->>LC: yes, hash H
+    LC-->>PC: reply
+    PC-->>P: yes, hash H
     P->>P: hash the phone's own copy again, equal to H?
     P->>OS: trash request (createTrashRequest)
     OS->>U: system prompt: move to trash?
@@ -96,9 +100,9 @@ sequenceDiagram
 - FR-C4-6 A file is deleted only by its owning device, after user confirmation, after re-hashing it and confirming that the kept copy still exists; otherwise nothing is deleted.
 - FR-C4-7 Deleted files go to the system trash where the system has one.
 - FR-C4-8 An ignored group does not appear again on any device.
-- NFR-C4-1 Exact-copy detection works with no other device online, from the last records.
+- NFR-C4-1 Exact-copy detection works with no other device online, from the last records; matches that need a missing hash are shown as "possible" until the device returns.
 - NFR-C4-2 No file content leaves its device except previews for the AI device, which are not stored (B1 v2).
-- NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours on the minimum AI device [estimate].
+- NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours of model time on a 4-core, 8-thread laptop, previews and videos not included [estimate].
 
 ## Open points and who settles them
 Hash only when needed, new index fields, free space per device (Mohammed, C2/C3); the delete permission and the log (Ali, C11); thresholds 5 and 0.90 (Phase 2 test on our photos); video frames on each system; iOS delete prompt; trash access on desktops; the duplicates screen (D1).
