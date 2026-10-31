@@ -1,6 +1,6 @@
-# C4: Duplicate-file detection (first version)
+# C4: Duplicate-file detection (final)
 
-Owner: Ali. Status: first version, 31 Oct 2026 (was due Fri 30 Oct; final Mon 2 Nov). Answers the questions in `C4-duplicate-detection-questions.md` (numbers in brackets, Q1 to Q18) and B1 decision 9 [5]. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
+Owner: Ali. Status: final, 1 Nov 2026 (first version 31 Oct; due Mon 2 Nov). Points that wait for others are marked in "Open points"; they will be updated on this file if the owners answer. Answers the questions in `C4-duplicate-detection-questions.md` (numbers in brackets, Q1 to Q18) and B1 decision 9 [5]. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
 **[PROPOSAL]** = a design choice or number to tune in Phase 2. **[NOT CHECKED]** = not confirmed in a primary source or by a test.
 
 ## 1. How it works in one paragraph
@@ -58,38 +58,11 @@ Two methods, for two kinds of "similar" [Q5]:
 - **Recompute [Q18]:** when list changes arrive, only for the sizes and photos that changed. A new AI device rebuilds the vectors (C2). A removed device (C1): its files leave every group when its records are removed (C3 decides when).
 
 ## 7. Sequence: free space on the phone, keep the laptop copy
-Draft in Mermaid; the final version (2 Nov) will be draw.io with a PNG export.
+Editable source: `diagrams/C4-duplicate-sequence.drawio`; image: `diagrams/C4-duplicate-sequence.png`. Example on an Android phone; on a desktop step 12 is the system's trash and steps 13 and 14 do not happen; on iPhone/iPad the PhotoKit delete is used (prompt [NOT CHECKED]).
 
-```mermaid
-sequenceDiagram
-  actor U as User
-  participant P as Phone: UI and C4 module
-  participant PC as Phone: communication layer
-  participant LC as Laptop: communication layer
-  participant L as Laptop: C4 module
-  participant OS as Android system
-  U->>P: open Duplicates, choose "delete phone copy, keep laptop copy"
-  P->>U: confirm? (space freed, which copy is kept)
-  U->>P: confirm
-  P->>PC: ask the laptop: do you still have path X with hash H?
-  PC->>LC: request over the trusted connection (C1)
-  alt laptop online
-    LC->>L: request
-    L->>L: hash its file again
-    L-->>LC: yes, hash H
-    LC-->>PC: reply
-    PC-->>P: yes, hash H
-    P->>P: hash the phone's own copy again, equal to H?
-    P->>OS: trash request (createTrashRequest)
-    OS->>U: system prompt: move to trash?
-    U->>OS: allow
-    OS-->>P: done
-    P->>P: update own list, log the delete
-    P->>PC: send list change to the other devices (C3)
-  else laptop off or file changed
-    P->>U: "Cannot confirm the laptop copy now. Nothing was deleted."
-  end
-```
+![C4 sequence diagram: free space on the phone, keep the laptop copy](../diagrams/C4-duplicate-sequence.png)
+
+In words: the phone asks the laptop, through both communication layers and over the trusted connection (C1), whether the copy to keep still exists with hash H (steps 4 to 10). Only if the laptop answers yes and the phone's own copy still has hash H does the phone send the trash request; Android shows its own prompt (steps 12 to 15). Otherwise nothing is deleted (step 18).
 
 ## 8. Requirements (for A8 and A9)
 - FR-C4-1 Exact copies are files with equal size and equal SHA-256; only the owning device reads a file.
@@ -105,7 +78,7 @@ sequenceDiagram
 - NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours of model time on a 4-core, 8-thread laptop, previews and videos not included [estimate].
 
 ## Open points and who settles them
-Hash only when needed, new index fields, free space per device (Mohammed, C2/C3); the delete permission and the log (Ali, C11); thresholds 5 and 0.90 (Phase 2 test on our photos); video frames on each system; iOS delete prompt; trash access on desktops; the duplicates screen (D1).
+**Waiting for answers:** hash only when needed, the two new index fields and free space per device (Mohammed, C2/C3; asked 1 Nov); the delete permission and the log (Ali, C11, due 5 Nov); the duplicates screen (D1). **Phase 2 tests:** thresholds 5 and 0.90 on our own photos; taking video frames on each system; the iOS delete prompt; trash access from Flutter on desktops.
 
 ## Sources (opened 31 Oct 2026)
 1. Czkawka documentation: FAQ (size, prehash and full hash pipeline; perceptual hash algorithms, hash size and thresholds; greyscale matches; similar videos with ffmpeg), Instruction (prehash = first and last 4 KB), Instruction_CLI (starting values): https://github.com/qarmin/czkawka/tree/master/instructions
