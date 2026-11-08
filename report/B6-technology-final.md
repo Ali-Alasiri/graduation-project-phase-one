@@ -31,7 +31,7 @@ Status words: **tested** = run by us; **primary source** = read in the official 
 
 ## 3. Answers to the team
 
-- **Mohammed (C2/C3, decision 14), photo previews for the AI device:** the device that owns the photo makes one small preview (proposal: JPEG with the short side 256 px) and sends it over the trusted connection; the AI device computes the 512-number vector and **deletes the preview** (as B1 v2 allows: local network only, not kept, a switch per device). Size estimate: about 15 KB per preview, so about 1.5 GB per 100,000 photos, a few minutes on home Wi-Fi (estimate, not measured). For videos: 3 frames per video (C4). Please add to the index (C2/C3) for photos a **perceptual hash** (32 bytes) made by the owning device; C4 uses it to find resized copies without the AI device.
+- **Mohammed (C2/C3, decision 14), photo previews for the AI device:** the device that owns the photo makes one small preview (JPEG, 224 × 224 px, the model's input size; agreed with Mohammed on 8 Nov, see C4 Open points) and sends it over the trusted connection; the AI device computes the 512-number vector and **deletes the preview** (as B1 v2 allows: local network only, not kept, a switch per device). Size estimate: about 15 KB per preview, so about 1.5 GB per 100,000 photos, a few minutes on home Wi-Fi (estimate, not measured). For videos: 3 frames per video (C4). Please add to the index (C2/C3) for photos a **perceptual hash** (32 bytes) made by the owning device; C4 uses it to find resized copies without the AI device.
 - **Ahmed (C9/C10, decision 10):** agreed, WebRTC for live streams, as in choice 3. Files stay on our own TLS connection (C6 to confirm).
 - **Mahmoud (decision 15):** Ali has no Mac and no Linux machine.
 
