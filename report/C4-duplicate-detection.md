@@ -1,6 +1,6 @@
 # C4: Duplicate-file detection (final)
 
-Owner: Ali. Status: final, 1 Nov 2026 (first version 31 Oct; due Mon 2 Nov). Points that wait for others are marked in "Open points"; they will be updated on this file if the owners answer. Answers the questions in `C4-duplicate-detection-questions.md` (numbers in brackets, Q1 to Q18) and B1 decision 9 [5]. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
+Owner: Ali. Status: final, 1 Nov 2026 (first version 31 Oct); agreements with Mohammed added 8 Nov (Open points). Points that wait for others are marked in "Open points"; they will be updated on this file if the owners answer. Answers the questions in `C4-duplicate-detection-questions.md` (numbers in brackets, Q1 to Q18) and B1 decision 9 [5]. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
 **[PROPOSAL]** = a design choice or number to tune in Phase 2. **[NOT CHECKED]** = not confirmed in a primary source or by a test.
 
 ## 1. How it works in one paragraph
@@ -28,11 +28,11 @@ Two methods, for two kinds of "similar" [Q5]:
 | Match | Hamming distance ≤ 5 [PROPOSAL] | cosine similarity ≥ 0.90 [PROPOSAL, tune on our own photos] |
 | Needs the AI device | no | yes |
 
-- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview (short side 256 px [PROPOSAL]) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, plus making and sending previews, plus videos; then only new photos (B6 point 2, estimate).
+- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview of **224 × 224 px** (resized so the short side is 224, then the centre cut out, which is CLIP's own input step [6]; agreed with Mohammed, Part A point 2) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, plus making and sending previews, plus videos; then only new photos (B6 point 2, estimate).
 - **Comparing:** a new photo is compared with all stored vectors (100,000 × 512 multiplications, very small). A full rebuild compares all pairs as a matrix product in blocks: 100,000² ÷ 2 × 512 ≈ 2.6 × 10¹² multiply-adds, minutes on a laptop if run in ONNX Runtime [estimate, NOT CHECKED].
 - **Groups:** built around one photo; a photo joins only if it is similar to that photo, which avoids long chains of "A looks like B looks like C" [PROPOSAL].
 - **False groups [Q7]:** perceptual hashes ignore colour, so a black-and-white copy matches its colour original, and plain backgrounds match each other [1]. So the "same photo" group also needs equal aspect ratio (±2 %) [PROPOSAL], and "similar" groups are never deleted in bulk (section 5).
-- **Videos [Q8]:** exact copies by hash, as any file. Similar videos: the owning device sends 3 frames (at 10 %, 50 % and 90 % of the length) as previews; two videos are similar if their lengths differ by 2 s or less and all three frame pairs pass the photo threshold [PROPOSAL]. Czkawka also samples frames and needs ffmpeg for it [1]; how our app takes frames on each system is [NOT CHECKED]. If it fails on phones, phones offer exact video copies only.
+- **Videos [Q8]:** exact copies by hash, as any file. Similar videos: the owning device sends 3 frames (at 10 %, 50 % and 90 % of the length) as 224 × 224 previews; two videos are similar if their lengths differ by 2 s or less and all three frame pairs pass the photo threshold [PROPOSAL]. Czkawka also samples frames and needs ffmpeg for it [1]; how our app takes frames on each system is [NOT CHECKED]. If it fails on phones, phones offer exact video copies only.
 - **AI device off [Q8]:** exact copies and "same photo" groups keep working; "similar" shows the last results and their date, as C2 designs.
 
 ## 4. Showing the results (Q9 to Q11)
@@ -78,11 +78,18 @@ In words: the phone asks the laptop, through both communication layers and over 
 - NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours of model time on a 4-core, 8-thread laptop, previews and videos not included [estimate].
 
 ## Open points and who settles them
-**Waiting for answers:** hash only when needed, the two new index fields and free space per device (Mohammed, C2/C3; asked 1 Nov); the delete permission and the log (Ali, C11, due 5 Nov); the duplicates screen (D1). **Phase 2 tests:** thresholds 5 and 0.90 on our own photos; taking video frames on each system; the iOS delete prompt; trash access from Flutter on desktops.
+**Agreements with Mohammed (C2/C3), 8 Nov 2026** (Mahmoud's suggestions; Mohammed to confirm in his files):
+1. **Full hash:** C4's rule. The hash field in C3 is "filled when needed" (empty until a file matches another in size and partial hash), and C3 adds C4's two fields: partial hash (32 bytes) and perceptual hash (32 bytes, photos). **Free space:** C4 needs, per device, the free and total bytes of the storage that holds the scanned files, updated at each scan and each connect, in the device record (C3, B5). It is used only to suggest which device to free (section 5).
+2. **Preview size: 224 × 224** (C2's number). It is exactly the model's input (CLIP resizes the short side to 224 and cuts out the centre [6]), so a larger preview would only be shrunk on the AI device; it is also the smaller transfer. C4 and B6 final changed from 256.
+3. **Videos:** C4 stays (3 frames per video, section 3); C2 changes "not in the first version" to C4's rule, with frame taking per system still [NOT CHECKED].
+4. **Rebuild time** for C2: "about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, from a published measurement of the same image model (14.8 previews per second, CPU only); our estimate, not measured on ONNX Runtime; previews and videos not included" (B6 final, point 2).
 
-## Sources (opened 31 Oct 2026)
+**Waiting for answers:** the delete permission and the log (Ali, C11); the duplicates screen (D1). **Phase 2 tests:** thresholds 5 and 0.90 on our own photos; taking video frames on each system; the iOS delete prompt; trash access from Flutter on desktops.
+
+## Sources (opened 31 Oct 2026; source 6 on 8 Nov 2026)
 1. Czkawka documentation: FAQ (size, prehash and full hash pipeline; perceptual hash algorithms, hash size and thresholds; greyscale matches; similar videos with ffmpeg), Instruction (prehash = first and last 4 KB), Instruction_CLI (starting values): https://github.com/qarmin/czkawka/tree/master/instructions
 2. Android `MediaStore.java` (`createTrashRequest`, `createDeleteRequest`, `IS_TRASHED`, "default trashed expiration is typically 30 days"), AOSP mirror: https://github.com/aosp-mirror/platform_packages_providers_mediaprovider/blob/main/apex/framework/java/android/provider/MediaStore.java
 3. Android API 30 differences, `MediaStore` (both methods added in API 30): https://developer.android.com/sdk/api_diff/30/changes/android.provider.MediaStore
 4. Apple, `PHAssetChangeRequest.deleteAssets(_:)`: https://developer.apple.com/documentation/photos/phassetchangerequest/deleteassets(_:)
 5. Team files: `B6-technology-final.md` (choices 4 and 6, points 2 and 5), `C2-ai-node.md` (Q1, Q2), `B1-architecture-v2.md` (rules 1 to 4, decisions 9 and 14).
+6. OpenAI CLIP, `clip/clip.py` (`_transform`: resize to the input size, then centre crop): https://github.com/openai/CLIP/blob/main/clip/clip.py
