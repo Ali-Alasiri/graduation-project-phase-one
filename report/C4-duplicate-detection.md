@@ -28,7 +28,7 @@ Two methods, for two kinds of "similar" [Q5]:
 | Match | Hamming distance ≤ 5 [PROPOSAL] | cosine similarity ≥ 0.90 [PROPOSAL, tune on our own photos] |
 | Needs the AI device | no | yes |
 
-- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview of **224 × 224 px** (resized so the short side is 224, then the centre cut out, which is CLIP's own input step [6]; agreed with Mohammed, Part A point 2) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, plus making and sending previews, plus videos; then only new photos (B6 point 2, estimate).
+- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview of **224 × 224 px** (resized so the short side is 224, then the centre cut out, which is CLIP's own input step [6]; proposed to Mohammed on 8 Nov, see Open points item 2) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, plus making and sending previews, plus videos; then only new photos (B6 point 2, estimate).
 - **Comparing:** a new photo is compared with all stored vectors (100,000 × 512 multiplications, very small). A full rebuild compares all pairs as a matrix product in blocks: 100,000² ÷ 2 × 512 ≈ 2.6 × 10¹² multiply-adds, minutes on a laptop if run in ONNX Runtime [estimate, NOT CHECKED].
 - **Groups:** built around one photo; a photo joins only if it is similar to that photo, which avoids long chains of "A looks like B looks like C" [PROPOSAL].
 - **False groups [Q7]:** perceptual hashes ignore colour, so a black-and-white copy matches its colour original, and plain backgrounds match each other [1]. So the "same photo" group also needs equal aspect ratio (±2 %) [PROPOSAL], and "similar" groups are never deleted in bulk (section 5).
@@ -75,14 +75,14 @@ In words: the phone asks the laptop, through both communication layers and over 
 - FR-C4-8 An ignored group does not appear again on any device.
 - NFR-C4-1 Exact-copy detection works with no other device online, from the last records; matches that need a missing hash are shown as "possible" until the device returns.
 - NFR-C4-2 No file content leaves its device except previews for the AI device, which are not stored (B1 v2).
-- NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours of model time on a 4-core, 8-thread laptop, previews and videos not included [estimate].
+- NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours of model time on a 4-core, 8-thread laptop-class processor, previews and videos not included [estimate].
 
 ## Open points and who settles them
-**Agreements with Mohammed (C2/C3), 8 Nov 2026** (Mahmoud's suggestions; Mohammed to confirm in his files):
+**Agreements proposed to Mohammed (C2/C3), 8 Nov 2026** (points 1 and 3 follow Mahmoud's suggestions; waiting for Mohammed to confirm and update C2/C3):
 1. **Full hash:** C4's rule. The hash field in C3 is "filled when needed" (empty until a file matches another in size and partial hash), and C3 adds C4's two fields: partial hash (32 bytes) and perceptual hash (32 bytes, photos). **Free space:** C4 needs, per device, the free and total bytes of the storage that holds the scanned files, updated at each scan and each connect, in the device record (C3, B5). It is used only to suggest which device to free (section 5).
 2. **Preview size: 224 × 224** (C2's number). It is exactly the model's input (CLIP resizes the short side to 224 and cuts out the centre [6]), so a larger preview would only be shrunk on the AI device; it is also the smaller transfer. C4 and B6 final changed from 256.
 3. **Videos:** C4 stays (3 frames per video, section 3); C2 changes "not in the first version" to C4's rule, with frame taking per system still [NOT CHECKED].
-4. **Rebuild time** for C2: "about 2 hours per 100,000 photos on a 4-core, 8-thread laptop, from a published measurement of the same image model (14.8 previews per second, CPU only); our estimate, not measured on ONNX Runtime; previews and videos not included" (B6 final, point 2).
+4. **Rebuild time** for C2: "about 2 hours per 100,000 photos on a 4-core, 8-thread laptop-class processor (measured on an Intel i7-8559U mini PC), from a published measurement of the same image model (14.8 previews per second, CPU only); our estimate, not measured on ONNX Runtime; previews and videos not included" (B6 final, point 2).
 
 **Waiting for answers:** the delete permission and the log (Ali, C11); the duplicates screen (D1). **Phase 2 tests:** thresholds 5 and 0.90 on our own photos; taking video frames on each system; the iOS delete prompt; trash access from Flutter on desktops.
 
