@@ -1,56 +1,101 @@
-# B6: Technology choices (final)
+# Technology Choices
 
-Owner: Ali. Status: final, 31 Oct 2026 (was due Thu 29 Oct); preview size updated 8 Nov. Replaces `B6-technology-v0.md`, which stays unchanged. Keeps every v0 choice; changes only what the checks below changed (section 3: how the client proves its key; live streams on WebRTC). Answers B1 decisions 1 to 5, 10 (B6's part) and 12, and the team's questions on decisions 14 and 15. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`.
+## Introduction
 
-Status words: **tested** = run by us; **primary source** = read in the official documentation or the project's own source code (link given); **still open** = not settled, with the reason. Nothing in this file is tested: no Dart or Flutter SDK could be installed in the environment used, so point 1 was settled by reading the Dart source.
+The technology behind the app decides what the user can expect from it. The choices below give the user one app that looks and works the same on Windows, macOS, Linux, Android, iPhone and iPad; devices that find each other and talk directly, with no internet and no server; small AI models that run on one of the user's own computers; and stored data that is encrypted on every device. Each choice below states the decision, the reason for it and its limitation. A later section explains how the main facts behind the choices were checked, and which systems the team can test.
 
-## 1. The six points that v0 marked "not checked"
+## 1. Operating systems
 
-| # | Question | Answer | Status |
-|---|---|---|---|
-| 1 | Can Dart's TLS server verify a self-signed client certificate? | **Not per connection.** The server API has no `onBadCertificate` callback; that callback exists only on the client side [1]. In the native code, a client certificate that fails normal checks is accepted only if a bad-certificate callback returns true [2], and the Dart side registers one only when `onBadCertificate` is given, which the server cannot do [1]. The only way left is to add each paired device's certificate to the server's trust store beforehand (`setTrustedCertificatesBytes`). That is documented only "for client connections" [1]; there is no call to remove a certificate, so removing a device means a new `SecurityContext` and restarting the listener (C1 v2 [13]); and on macOS/iOS the check goes through Apple's own trust code [2]. **Pick: the fallback, a signed challenge inside the channel**, as the C1 v2 draft also recommends. | Primary source (Dart SDK source, commit `ae783c4`, 30 Oct 2026) [1][2]. Not tested. |
-| 2 | AI speed on 100,000 photos (CPU) | Published measurement of the same image model (CLIP ViT-B/32; our multilingual version keeps this image encoder unchanged [11]): **51,126 previews in 57 min 39 s ≈ 14.8 per second** on a 4-core Intel i7-8559U with no GPU (Immich, 10 Oct 2026) [10]. For 100,000 photos: 100,000 ÷ 14.8 ≈ 6,760 s ≈ **1.9 hours**, plus making and sending the previews (not measured). **For C2: rebuild time about 2 hours per 100,000 photos on a 4-core, 8-thread laptop-class processor like the one measured (an Intel i7-8559U in a 2018 mini PC)**; a slower 4-core machine takes longer. Videos (3 frames each, C4) add to this: not measured. | Estimate from a published measurement (its time includes reading the previews over the network). The article does not name its runtime; on ONNX Runtime it is not measured. |
-| 3 | Does an Android connectedDevice foreground service keep its network under Doze? | **Yes.** In Android's network policy code, a process at foreground-service level or higher is allowed network "while idle or in power save mode" (`FOREGROUND_THRESHOLD_STATE = PROCESS_STATE_BOUND_FOREGROUND_SERVICE`), and this reason removes the Doze and Battery Saver blocks [7]. (Android's documentation page lists both rules without saying which wins [6]; the code settles it.) Two exceptions: a "Low Power Standby" mode in the same code allows only apps in the top state or on its allowlist (which phones turn it on: not checked), and makers' own battery managers [5]. | Primary source (AOSP source, mirror snapshot of Mar 2025) [7]. Older (7 to 10) and newer Android versions, and real phones: still open, need a test in Phase 2. |
-| 4 | Linux test desktop, and who has a Linux machine | **Ubuntu 24.04 LTS** (inside Flutter's supported range [3]). Ali has no Linux machine and no Mac. Suggestion: a live USB or a virtual machine on a team laptop (whether mDNS works in a virtual machine needs bridged networking: not checked). | Distribution decided. **Who has Linux: still open, needs the team's answer.** |
-| 5 | Arabic quality of the chosen models | Photo model (multilingual CLIP): Arabic is in its training list [11], but no published Arabic score was found for this exact model: **claimed, not measured.** Text model (multilingual-e5-small): **measured** by its authors on Arabic MIRACL (Wikipedia passages): nDCG@10 71.4 (base 71.6, large 76.0) [12]. This only affects search by words (C5); photo-to-photo duplicates (C4) compare pictures only. | Primary source for e5 [12]; still open for CLIP (test with our own Arabic queries in Phase 2). |
-| 6 | Which key store does `flutter_secure_storage` use on Windows? | Version 4.2.2: values go into one file, `flutter_secure_storage.dat`, in the app's support folder, encrypted with **Windows DPAPI** (`CryptProtectData`, no extra secret) [8]. Its README still describes an older method (AES-GCM with the key in Credential Manager), which the code keeps only to read old data [8]. Microsoft: "only a user with the same logon credential" can decrypt, and a roaming profile can carry it to another PC [9]. Our reading (not stated by Microsoft): with no extra secret, any program running as the same Windows user can decrypt it. | Primary source (package source and Microsoft docs) [8][9]; the "any program" point is our inference. |
+**Decision.** The app supports five systems, with the minimum versions that Flutter 3.47 supports: Windows 10, macOS 12, Linux (Ubuntu 20.04 or Debian 10), Android 7.0, and iOS and iPadOS 15.
 
-## 2. Final choices: decision, why, what we give up
+**Reason.** All five systems are kept in the design. The limits of each system are handled by capabilities: each device tells the others what it can do, and a feature offers an action only when both devices support it.
 
-**1. Operating systems.** *Decision:* all five, minimums as Flutter 3.47: Windows 10, macOS 12, Ubuntu 20.04 / Debian 10 (test on Ubuntu 24.04), Android 7.0, iOS/iPadOS 15 [3]. *Why:* the team decided all five; per-system limits are handled by capabilities (B1 rule 5). *We give up:* on iPhone/iPad, remote control and the AI role, and access to files outside the photo library and folders the user picks; iPhone, iPad and Mac builds need a Mac with Xcode, which nobody has confirmed yet (decision 15).
+**Limitation.** iPhone and iPad cannot be controlled from another device, never take the AI role, and see only the photo library and the folders that the user picks. Apps for iPhone, iPad and Mac can be built only on a Mac with Xcode.
 
-**2. One app.** *Decision:* one Flutter (Dart) app; small native plugins for screen capture, input control, the Android background service and the clipboard. *Why:* one code base keeps behaviour the same on every device; LocalSend and RustDesk show the approach works for features close to ours (B6 v0, sources 2 and 3). *We give up:* a fully native look and full OS access; some native code per system is still needed; the team must learn Dart.
+**What will be tested.** No member of the team has a Mac or a Linux machine.
+- **Windows and Android** (phones and tablets) are tested on the team's own devices. They are the main pair for the prototype.
+- **Linux** is tested in part: only Ubuntu 24.04 with GNOME on Wayland, started from a USB stick or a second partition on a team member's Windows computer. Other desktops and X11 are checked against their documentation only.
+- **macOS, iPhone and iPad** are not built and not tested. Their parts of the design are checked against Apple's documentation only.
 
-**3. Communication.** *Decision (changed by point 1):* discovery with mDNS/Bonjour (Bonsoir); TLS 1.3 where the **client pins the server's certificate** (its SHA-256 must equal the stored id) and the **client proves its own key with a signed challenge inside the channel** (C1 v2 draft, section 1.5 [13], not yet reviewed by the team). Messages on one long-lived connection; files on a separate, chunked TLS connection that can resume (C6). **Live streams (C9, C10): WebRTC**, as Ahmed proposes [13], with its setup messages sent over our messages connection, no STUN or TURN servers, and its DTLS fingerprint carried inside that trusted connection. *Why:* Dart's server cannot check an unknown client certificate per connection (point 1); WebRTC already gives video compression, UDP and quality that adapts to the Wi-Fi, which our own stream would have to build. *We give up:* our own small authentication protocol needs a review and test vectors; Dart cannot read TLS exported keys, so the proof is bound to the server certificate hash (C1); WebRTC adds size to the app and a second encryption layer. Not checked: WebRTC with no internet at all, and the app size it adds.
+## 2. One app for all systems
 
-**4. AI model and runtime.** *Decision:* unchanged. SHA-256 for exact copies on every device; multilingual CLIP ViT-B/32 (photos) and multilingual-e5-small (names and text), run with ONNX Runtime on one laptop or PC; minimum: 64-bit, 4 cores, 8 GB RAM (16 suggested), about 3 GB free disk, no GPU. *Why:* a first build of about 2 hours per 100,000 photos (point 2) is acceptable for a one-time job that then runs only on new photos. *We give up:* the accuracy of bigger models; Arabic photo search quality is not known (point 5); no chat assistant.
+**Decision.** One Flutter (Dart) app runs on all five systems. Small native parts handle screen capture, input control, the Android background service and the clipboard.
 
-**5. Storage.** *Decision:* SQLite through `package:sqlite3`. Its default build includes full-text search (FTS5) [4]. The app is built with the package's SQLCipher (or SQLite3MultipleCiphers) option [4]: the main database is opened without a key, and the vault with the key from the master password. Device private key in `flutter_secure_storage`: Keychain (Apple), Android Keystore, libsecret (Linux), DPAPI file (Windows, point 6). *Why:* one engine on all five systems, already bundled. *We give up:* on Windows the private key is protected from other user accounts, not from other programs of the same user (C11 must state this; adding an app-specific secret to DPAPI is a C11 option).
+**Reason.** One code base keeps the behaviour the same on every device. LocalSend and RustDesk show that this approach works for features close to the ones of this project.
 
-**6. Phones in the background.** *Decision:* unchanged. iPhone/iPad: reachable only while the app is open. Android: optional "stay connected" mode, a connectedDevice foreground service, which keeps its network under Doze (point 3). *Why:* iOS stops the app's connections when it is suspended (B6 v0, source 6); the Android mode is the only reliable way and is allowed by the system. *We give up:* on Android, an always-visible notification and battery use (not measured); on iPhone/iPad, nothing works with the app closed.
+**Limitation.** The app does not have a fully native look, and some native code is still needed for each system. The team has to learn Dart.
 
-## 3. Answers to the team
+## 3. How devices talk to each other
 
-- **Mohammed (C2/C3, decision 14), photo previews for the AI device:** the device that owns the photo makes one small preview (JPEG, 224 × 224 px, the model's input size; proposed to Mohammed on 8 Nov, see C4 Open points) and sends it over the trusted connection; the AI device computes the 512-number vector and **deletes the preview** (as B1 v2 allows: local network only, not kept, a switch per device). Size estimate: about 15 KB per preview, so about 1.5 GB per 100,000 photos, a few minutes on home Wi-Fi (estimate, not measured). For videos: 3 frames per video (C4). Please add to the index (C2/C3) for photos a **perceptual hash** (32 bytes) made by the owning device; C4 uses it to find resized copies without the AI device.
-- **Ahmed (C9/C10, decision 10):** agreed, WebRTC for live streams, as in choice 3. Files stay on our own TLS connection (C6 to confirm).
-- **Mahmoud (decision 15):** Ali has no Mac and no Linux machine.
+**Decision.**
+- **Discovery.** Devices find each other on the local network with mDNS/Bonjour, through the Bonsoir package.
+- **The connection.** Every connection uses TLS 1.3. The connecting device checks that the other device's certificate matches the one stored at pairing (its SHA-256 must equal the stored device id). The connecting device then proves its own key with a signed challenge inside the encrypted channel.
+- **Messages and files.** Messages use one long-lived connection. Files use a separate connection, in chunks, that can resume after a drop.
+- **Live streams.** Screen Sharing and Remote Control and Extra Screen use WebRTC. WebRTC is set up over the message connection, uses no STUN or TURN server, and its DTLS fingerprint is carried inside the paired connection.
 
-## 4. Still open (carried to Phase 2 tests)
+**Reason.** Dart's TLS server cannot check an unknown client certificate for each connection (section 7), so the client proves its key inside the channel instead. On iPhone, Bonjour needs no special Apple entitlement, while custom broadcast or multicast would. WebRTC already provides video compression, delivery over UDP and quality that adapts to the Wi-Fi, which a custom stream would have to build.
 
-Dart crypto package for ECDSA signing on five systems (C1); Bonsoir on five systems; WebRTC offline and app size; whether screen streaming needs native code; Arabic photo search; CPU time for videos; Android Low Power Standby and makers' battery managers; Local Push Connectivity on iOS; who has a Mac and a Linux machine.
+**Limitation.** The proof inside the channel is the project's own small protocol, so it needs a review and test vectors. Dart cannot read the exported keys of a TLS session, so the proof is bound to the hash of the server's certificate instead. WebRTC makes the app larger and adds a second layer of encryption.
 
-## Sources (opened 31 Oct 2026)
+## 4. AI models and how they run
 
-1. Dart SDK, `sdk/lib/io/secure_server_socket.dart`, `secure_socket.dart`, `security_context.dart` (commit `ae783c4`): https://github.com/dart-lang/sdk/tree/main/sdk/lib/io
-2. Dart SDK, `runtime/bin/secure_socket_filter.cc` (`SSLFilter::Connect`), `security_context.cc` (`CertificateCallback`), `security_context_macos.cc`: https://github.com/dart-lang/sdk/tree/main/runtime/bin
-3. Flutter supported platforms (Flutter 3.47): https://docs.flutter.dev/reference/supported-platforms
-4. `package:sqlite3`, hook options (compile options incl. `SQLITE_ENABLE_FTS5`; SQLCipher and SQLite3MultipleCiphers builds): https://github.com/simolus3/sqlite3.dart/blob/main/sqlite3/doc/hook.md
+**Decision.** Exact copies are found with SHA-256 fingerprints on every device, with no AI. For similar photos and search by meaning, two small models run with ONNX Runtime on one laptop or computer, the AI device: a multilingual CLIP ViT-B/32 model for photos and multilingual-e5-small for file names and text. The device that holds a photo sends the AI device a 224 × 224 preview, which the AI device deletes after use; a video is sent as 3 frames. The minimum AI device is a 64-bit laptop or computer with 4 processor cores, 8 GB of memory (16 GB suggested), about 3 GB of free disk space and no graphics card.
+
+**Reason.** The models need no graphics card and fit in the memory of an ordinary laptop. A first build takes an estimated 2 hours for 100,000 photos, which is acceptable for a one-time job; after that, only new photos are processed.
+
+**Limitation.** Larger models would be more accurate. The quality of photo search with Arabic words is not known (section 7). The app has no chat assistant.
+
+## 5. Stored data
+
+**Decision.** Every device stores its data in SQLite, through the `sqlite3` Dart package. The package's default build includes full-text search (FTS5), and the app is built with the package's SQLCipher option. The device's private key is kept in the operating system's key store through the `flutter_secure_storage` package: Keychain on Apple systems, Android Keystore, libsecret on Linux, and a file protected by Windows DPAPI on Windows.
+
+**The three security rules of the system.** The main database is encrypted with a random key that is kept in the operating system's key store. The vault key is random and is stored only wrapped by a key made from the master password, so the master password can be changed. A device accepts a file list only if the owner device's signature is valid and its change number is higher than the one it already holds.
+
+**Reason.** SQLite with SQLCipher is one storage engine for all five systems, already bundled with the package.
+
+**Limitation.** On Windows, the key store protects the private key from other user accounts, but, by inference, not from other programs that run as the same user.
+
+**What will be tested.** The encryption of the main database, and how much it slows search and synchronisation, is tested on Windows, Android and Ubuntu 24.04. The password vault is tested on Windows and Android. The Keychain on Apple systems is not tested (section 1).
+
+## 6. Phones and tablets in the background
+
+**Decision.** iPhone and iPad are reachable only while the app is open. Android has an optional "Stay connected" mode, which runs a foreground service of the connected-device type and keeps its network while the phone rests (Doze).
+
+**Reason.** iOS stops the app's connections when it suspends the app. On Android, a foreground service is the only reliable way to stay reachable, and the system allows it.
+
+**Limitation.** On Android, the mode shows a notification all the time and uses battery. On iPhone and iPad, nothing works while the app is closed.
+
+## 7. How the main facts were checked
+
+- **Dart's TLS server.** The server side of Dart's TLS has no callback that can accept an unknown client certificate for each connection; such a callback exists only on the client side. The only alternative is to add each paired device's certificate to the server's trust store in advance, which is documented only for client connections and offers no way to remove a certificate. The connecting device therefore proves its key inside the channel. Basis: the Dart SDK source code, read at commit `ae783c4` of 30 October 2026.
+- **AI speed.** A published measurement of the same image model processed 51,126 previews in 57 minutes 39 seconds, about 14.8 previews per second, on a 4-core, 8-thread Intel i7-8559U processor with no graphics card. For 100,000 photos this gives 100,000 ÷ 14.8, about 6,760 seconds, or about 1.9 hours. The estimate of about 2 hours does not include making and sending the previews, or videos. Sending the previews (about 15 KB each, about 1.5 GB for 100,000 photos) takes an estimated few minutes on a home network.
+- **Android in the background.** Android's network policy source code allows network access during Doze and Battery Saver to a process that runs a foreground service. Two exceptions remain: Android's "Low Power Standby" mode, which allows only apps on the screen or on its allowlist, and the battery managers of some phone makers.
+- **Linux test system.** Ubuntu 24.04 is within Flutter's supported range, and it is the system named in the evaluation plan.
+- **Arabic.** The photo model lists Arabic among its training languages, but no published Arabic score was found for it. The text model was measured by its authors on Arabic passages (MIRACL): nDCG@10 of 71.4 for the small model.
+- **The Windows key store.** Version 4.2.2 of `flutter_secure_storage` stores values in one file, `flutter_secure_storage.dat`, encrypted with Windows DPAPI and no extra secret. Microsoft states that typically only a user with the same logon credential can decrypt such data, and that a roaming profile can carry it to another computer.
+
+## 8. Limitations
+
+The following has not yet been verified: the first AI build time with ONNX Runtime, including videos; the quality of photo search with Arabic words; Android's background behaviour on older (7 to 10) and newer versions and on real phones; a Dart package for ECDSA signing on all systems; the Bonsoir package on all systems; WebRTC with no internet at all and the size it adds to the app; whether screen streaming needs native code; and whether Apple would allow Local Push Connectivity for the app. The Apple systems remain design only, because the team has no Mac.
+
+## 9. Summary
+
+The app is one Flutter app for five systems. Devices find each other with mDNS, talk over TLS 1.3 with keys that are checked at every connection, and stream screens with WebRTC, all on the local network. Two small AI models run on one ordinary laptop or computer. Data is stored in SQLite and encrypted with SQLCipher, with keys kept by the operating system or made from the master password. Windows, Android and Ubuntu 24.04 will be tested; macOS, iPhone and iPad are checked against their documentation only.
+
+## References (opened 31 October 2026)
+
+1. Dart SDK, `sdk/lib/io` (`secure_server_socket.dart`, `secure_socket.dart`, `security_context.dart`), commit `ae783c4`: https://github.com/dart-lang/sdk/tree/main/sdk/lib/io
+2. Dart SDK, `runtime/bin` (`secure_socket_filter.cc`, `security_context.cc`, `security_context_macos.cc`): https://github.com/dart-lang/sdk/tree/main/runtime/bin
+3. Flutter, supported deployment platforms (Flutter 3.47): https://docs.flutter.dev/reference/supported-platforms
+4. `sqlite3` Dart package, hook options (FTS5; SQLCipher and SQLite3MultipleCiphers builds): https://github.com/simolus3/sqlite3.dart/blob/main/sqlite3/doc/hook.md
 5. RustDesk, remote control on Android and iOS (battery managers): https://rustdesk.com/blog/rustdesk-remote-control-android-ios
-6. Android, power management restrictions: https://developer.android.com/topic/performance/power/power-details
-7. AOSP `NetworkPolicyManager.java` (`isProcStateAllowedWhileIdleOrPowerSaveMode`, `FOREGROUND_THRESHOLD_STATE`) and `NetworkPolicyManagerService.java` (`ALLOWED_REASON_FOREGROUND`), mirror commit `1cdfff5`: https://github.com/aosp-mirror/platform_frameworks_base
-8. `flutter_secure_storage_windows` 4.2.2 source (`flutter_secure_storage_windows_ffi.dart`, `DpapiJsonFileMapStorage`) and README: https://github.com/juliansteenbakker/flutter_secure_storage/tree/main/flutter_secure_storage_windows
+6. Android Developers, power management restrictions: https://developer.android.com/topic/performance/power/power-details
+7. Android Open Source Project, `NetworkPolicyManager.java` and `NetworkPolicyManagerService.java`, mirror commit `1cdfff5`: https://github.com/aosp-mirror/platform_frameworks_base
+8. `flutter_secure_storage_windows` 4.2.2, source code and README: https://github.com/juliansteenbakker/flutter_secure_storage/tree/main/flutter_secure_storage_windows
 9. Microsoft, `CryptProtectData` function: https://learn.microsoft.com/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
-10. Mustafa.net, "Immich without a GPU" (measured 10 Oct 2026): https://mustafa.net/2026/10/10/immich-without-gpu-intel-nuc/
+10. Mustafa.net, "Immich without a GPU" (measured on 10 October 2026): https://mustafa.net/2026/10/10/immich-without-gpu-intel-nuc/
 11. clip-ViT-B-32-multilingual-v1 model card: https://huggingface.co/sentence-transformers/clip-ViT-B-32-multilingual-v1
-12. Wang et al., "Multilingual E5 Text Embeddings: A Technical Report", Table 6 (MIRACL dev): https://arxiv.org/abs/2402.05672
-13. Ahmed, `C9-screen-sharing-notes.md` section 3 (branch `c9-screen-sharing`); Mahmoud, `C1-device-discovery-pairing-trust.md` sections 1.5 and 9 (branch `claude/pairing-design`); `B1-architecture-v2.md` decisions 10, 14, 15.
+12. L. Wang et al., "Multilingual E5 Text Embeddings: A Technical Report", Table 6: https://arxiv.org/abs/2402.05672
+13. Apple, TN3179, Understanding local network privacy (Bonjour and the multicast entitlement; opened 21 October 2026): https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy
+14. LocalSend README and RustDesk README (Flutter; opened 21 October 2026): https://github.com/localsend/localsend and https://github.com/rustdesk/rustdesk
+15. Team documents: Implementation and Evaluation Plan (sections 3 and 4); Device Discovery, Pairing and Trust; Security and Privacy; Password Management; Duplicate File Detection; Screen Sharing and Remote Control.
