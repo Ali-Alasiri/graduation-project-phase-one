@@ -1,81 +1,111 @@
-# C11: Security and privacy design (first version)
+# Security and Privacy
 
-Owner: Ali. Status: first version, 8 Nov 2026. Phase 1 is design only: no code. Builds on the pairing design C1 v2 (draft, `C1-device-discovery-pairing-trust.md`), `B1-architecture-v2.md`, `B6-technology-final.md`, C4, C7, C8 and the other team files [2]. **[PROPOSAL]** = a design choice to settle; **[NOT CHECKED]** = not confirmed in a primary source or by a test.
+## Introduction
 
-## 1. The line between C1 and C11 (proposal, for Mahmoud to answer)
-I accept the list in C1 section 8:
-- **C1 decides:** device identity (key pair, id = hash of the certificate), what is announced, how a device is admitted (QR or code), how every connection is authenticated, how a removal is made and spread (including the exchange of removal lists on every reconnect), and that an unknown device gets no feature data.
-- **C11 decides:** what a trusted device **may do** (permissions per feature, section 3); how **stored data** is protected (section 4); the **lost-device policy** beyond the removal itself (section 5); the system key store per platform (B6 point 6); backups.
-- **The hook between them:** before any feature data goes to a device, core services answer two questions: *is it trusted (C1)?* and *is this feature switched on for this device (C11)?* Both must be yes.
+The app moves file lists, files, passwords and screen images between the user's devices, so the user must be able to trust that this data reaches only their own devices and nobody else. Security and Privacy decides what a paired device may do, how the data stored on each device is protected, and what happens when a device is lost. For the user this means three things. Every feature is off until the user turns it on, and the user decides which device may do what. The data stored by the app is encrypted, and some of it is never stored at all. A lost device can be removed from any other device. This section builds on Device Discovery, Pairing and Trust, which decides how devices meet and become paired.
+
+## 1. What this design decides
+
+- **Device Discovery, Pairing and Trust decides** what identifies a device, what a device announces on the network, how a new device is paired (by QR code or by comparing a code), how every connection is checked, how a removal is made and passed on (including the exchange of removal lists at every new connection), and that an unknown device receives no feature data.
+- **Security and Privacy decides** what a paired device may do (permissions for each feature, section 3), how stored data is protected (section 4), what happens to a lost device beyond its removal (section 5), the use of the operating system's key store on each system, and backups.
+- **The check between them.** Before any feature data goes to a device, the core services answer two questions: is the device paired, and is this feature turned on for this device? Both answers must be yes.
 
 ## 2. Threats and protection
-Already fixed by B6 final: TLS 1.3 with the server certificate pinned and a signed challenge from the client (both directions authenticated); SQLCipher for the vault; device keys in the system key store; no internet (B1 rule 1).
+
+The final technology choices already provide the base: TLS 1.3 in which each device checks the other's certificate and the connecting device proves its key with a signed challenge; SQLCipher for stored data; device keys in the operating system's key store; and no internet.
 
 | Threat | Protection | What remains |
 |---|---|---|
-| **Someone on the same Wi-Fi** | Can see announcements and finish TLS on the normal port, but is refused at the signed challenge; the pairing port answers only while the user has a pairing window open, and pairing needs a code or QR a human checks (C1); all traffic is TLS 1.3 | Learns that our app runs and the device ids (C1 threat 2); can disturb discovery (denial of service) |
-| **Stolen unlocked phone** | Every feature off until turned on; vault locks after 5 min and on screen lock (C7); deleting, showing passwords and allowing screen control ask again (sections 3 and 5) | Whatever is open on screen; the thief can use features already allowed until the user removes the phone from another device |
-| **A trusted device that misbehaves** | It gets only the features switched on for it; delete requests need the owner's own switch and are logged (C4); file lists passed on through it are **signed by the owner device**, so it cannot forge another device's list (answers C3) [PROPOSAL] | It can read what it was allowed to read, send false "remove device" messages (C1 threat 11), and hold back or delay a list it passes on |
-| **Malware on one device** | Keys in the system key store; vault mostly locked; main database encrypted (section 4) | Malware running as the user can read memory while the app is open; on Windows, by our inference, it can also read the key store (DPAPI, B6 point 6). No app can fully stop this |
-| **A lost device that was switched off** | User removes it from any other device; the removal spreads (C1) | A device that was off still trusts the lost one until it meets another of the user's devices (section 5) |
+| **Someone on the same Wi-Fi** | The person can see announcements and can complete TLS on the normal port, but is refused at the signed challenge. The pairing port answers only while the user has a pairing window open, and pairing needs a code or QR code that a person checks. All traffic uses TLS 1.3 | The person learns that the app is running and sees the device ids, and can disturb discovery |
+| **A stolen phone that is unlocked** | Every feature is off until the user turns it on. The vault locks after 5 minutes and when the screen locks. Deleting files, showing passwords and allowing remote control ask for the fingerprint, face or PIN again (sections 3 and 5) | Whatever is open on the screen. The thief can use the features already allowed until the user removes the phone from another device |
+| **A paired device that misbehaves** | It receives only the features turned on for it. A delete request needs the owner device's own permission and is recorded in the deletion log. A device accepts a file list only if the owner device's signature is valid and its change number is higher than the one it already holds, so a device that passes a list on cannot change it | It can read what it was allowed to read, send false removal messages, and hold back or delay a list that it passes on |
+| **Malware on one device** | Keys are in the operating system's key store; the vault is locked most of the time; the main database is encrypted (section 4) | Malware running as the user can read memory while the app is open. On Windows, by inference, it can also read the key store. No app can fully prevent this |
+| **A lost device that was switched off** | The user removes it from any other device, and the removal is passed on | A device that was off still trusts the lost device until it meets another of the user's devices (section 5) |
 
-## 3. Permissions per feature
-Every feature is **off by default** on each device and each device pair (B1 v2). "Approve" = who must say yes.
+## 3. Permissions for each feature
+
+Every feature is off by default on each device and for each pair of devices. "Who approves" names the person who must agree.
 
 | Feature | Off by default | Who approves | Once or every time |
 |---|---|---|---|
-| File lists (C3) | Yes | Owner turns on "share my list" per device | Once |
-| Photo previews for the AI device (C2) | Yes | Owner of the photos | Once (switch per device) |
-| Duplicates: view (C4) | Uses the file lists | - | - |
-| Duplicates: **delete on another device** (C4) | Yes | Owner turns on "My other devices may delete duplicates here" | Once; each delete still confirmed by the user, re-checked, and **logged 30 days** on the owner. Android photos and videos: the system's own prompt; other Android files: the app's own confirmation; iPhone/iPad prompt not checked (C4) |
-| Search (C5) | Uses the file lists and AI data | - | - |
-| File sharing (C6) | Yes | Receiver | Every time, unless the receiver turns on auto-accept from own devices (C6) |
-| Passwords (C7) | Yes | User types the master password on each device that joins | Once per device; vault unlock each session |
-| Clipboard (C8) | Yes | Each device; sending and receiving separately per device (C8) | Once; never for secrets (C8) |
-| Screen sharing (C9) | Yes | User on the shared device | Every time (C9) |
-| Remote control (C9) | Yes | User on the controlled device, separate from viewing | Every time; "Stop" always works (C9) |
-| Extra screen (C10) | Yes | User on both devices [PROPOSAL, C10 not yet designed] | Every time |
+| File Indexing and Offline-Device Records (sharing the file list) | Yes | The owner turns on "Share my list" for each device | Once |
+| Photo previews for the AI device | Yes | The owner of the photos | Once, with a switch for each device |
+| Duplicate File Detection: viewing groups | Uses the file lists | Not needed | Not needed |
+| Duplicate File Detection: deleting on another device | Yes | The owner turns on "Allow my other devices to delete duplicates here" | Once. Each deletion is still confirmed by the user, checked again, and recorded in a deletion log kept for 30 days on the owner device. On Android, photos and videos also show the system's own prompt; other Android files show the app's own confirmation |
+| Unified Search | Uses the file lists and the AI device | Not needed | Not needed |
+| Direct File Sharing | Yes | The receiving device | As Direct File Sharing describes |
+| Password Management | Yes | The user types the master password on each device that joins | Once for each device; the vault is unlocked in each session |
+| Clipboard Synchronisation | Yes | Each device; sending and receiving are turned on separately for each device | Once; secret items are never sent |
+| Screen Sharing | Yes | The user on the shared device | Every time |
+| Remote Control | Yes | The user on the controlled device, separately from viewing | Every time; "Stop" always works |
+| Extra Screen | Yes | The user on both devices | Every time |
 
-Changing a permission needs the device unlocked and, for delete, passwords and control, the system's fingerprint, face or PIN check [PROPOSAL].
+Changing a permission requires the device to be unlocked. Changing the permission to delete, the password settings or the permission to control a device also requires the system's fingerprint, face or PIN check.
 
-## 4. Data at rest
+## 4. Data stored on each device
+
+**The three security rules of the system.** The main database is encrypted with a random key that is kept in the operating system's key store. The vault key is random and is stored only wrapped by a key made from the master password, so the master password can be changed. A device accepts a file list only if the owner device's signature is valid and its change number is higher than the one it already holds.
 
 | Data | Where | Protection |
 |---|---|---|
-| Password vault | Every device that joined | SQLCipher with a random key wrapped by Argon2id from the master password (C7) |
-| Main database: own file list, copies of others' lists, trusted-device list, settings, ignore list, deletion log | Every device | **SQLCipher with a random key kept in the system key store** [PROPOSAL; this changes B6 choice 5, where the main database had no key]. SQLCipher uses AES-256 and checks an HMAC on every page, so changes to the file are detected [1]. Protects a copied file and other user accounts; not malware running as the user |
-| Similarity data (vectors) | AI device only | In the main database, so encrypted the same way |
-| Device private key | Every device | System key store (Keychain, Android Keystore, libsecret, Windows DPAPI file: B6 point 6) |
-| Backups | - | The app's data is excluded from cloud backups (on Android also because the plugin's key cannot be restored [B6 v0, source 29]) [NOT CHECKED per system] |
+| Password vault | Every device that has joined the vault | SQLCipher with a random vault key, stored only wrapped by a key made from the master password with Argon2id (Password Management) |
+| Main database: the device's own file list, the copies of the other devices' lists, the list of paired devices, settings, the list of ignored duplicate groups and the deletion log | Every device | SQLCipher with a random key kept in the operating system's key store. SQLCipher uses AES-256 and checks a message authentication code on every page, so any change to the file is detected. This protects a copied file and other user accounts; it does not protect against malware running as the user |
+| Similarity data (vectors) | The AI device only | Kept in the main database, so it is encrypted in the same way |
+| The device's private key | Every device | The operating system's key store: Keychain on Apple systems, Android Keystore, libsecret on Linux, and a protected file on Windows |
+| Backups | Not applicable | The app's data is left out of cloud backups. On Android this is also necessary because the key in the key store cannot be restored from a backup |
 
-**Never stored:** files of other devices (except a file the user received with C6); photo previews (deleted after the vector is made); clipboard items (C8); screen frames (C9); the master password and the wrapping key (C7); the plain vault key, except the optional biometric copy inside the system key store (C7).
+**Never stored:** the files of other devices (except a file that the user received with Direct File Sharing); photo previews (deleted once the vector is made); clipboard items; screen images; the master password and the key made from it; and the plain vault key, except the optional fingerprint or face copy inside the operating system's key store.
 
 ## 5. A lost device
-**Rule [PROPOSAL]:** from any other device, *Devices → Lost device → Remove*. Steps: (1) the removal is written and spread as C1 designs; (2) the AI role moves if the lost device had it (C2); (3) its file list is deleted (C3; C1 suggests hiding it first and deleting after the user agrees); (4) if it had the vault, the app offers **"Change the vault key"** (recommended): an unlocked device makes a new vault key, re-encrypts the vault and sends the new key, wrapped with the master password, only to the remaining devices; each of them asks for the master password once more (its biometric copy is replaced), and the app shows a **new recovery code**, because the old one opens only the old key. This protects entries added from now on. The lost device keeps its old copy, protected only by the old master password, which nothing can erase without a server; so the app advises changing the most important **website passwords** themselves.
 
-**Wording to the user:** "*Ali's phone* was removed. Your devices that are on now will refuse it. Devices that are switched off will refuse it after they next meet one of your devices; until then they may still accept it. If you turn one of them on away from your other devices, remove *Ali's phone* there too. The phone still holds the data it had: change the passwords of your important accounts."
+**The rule.** From any other device, the user chooses *Devices → Lost device → Remove*. Four things then happen.
+1. The removal is recorded and passed on as Device Discovery, Pairing and Trust describes.
+2. If the lost device had the AI role, the role moves to another device.
+3. The lost device's file list is deleted by the other devices.
+4. If the lost device had joined the vault, the app offers "Change the vault key", which is recommended. An unlocked device makes a new vault key, encrypts the vault again and sends the new key, wrapped with the master password, only to the remaining devices. Each remaining device asks for the master password once more, and its fingerprint or face copy of the key is replaced. The app shows a new recovery code, because the old code opens only the old key. This protects the entries added from then on.
 
-**Open case (B1, C1):** a device that was off still trusts the lost one until it hears about the removal. C1 already exchanges removal lists on every connection before anything else (C1 sections 1.5 and 1.7) and proposes that, at app start, a device waits up to 5 s to reach other trusted devices before it accepts connections. C11 adds only the advice in the wording above. The gap stays if the lost device is the first one it meets; without a server it cannot be closed.
+The lost device keeps its old copy, protected only by the old master password, and nothing can erase that copy without a server. The app therefore advises the user to change the passwords of their important accounts.
 
-## 6. Privacy
-What leaves a device goes only to the user's own trusted devices, and only for features switched on: file lists (names, sizes, dates, hashes: no contents), photo previews to the AI device (not kept), files the user sends, clipboard text the user allows, screen pictures during a session the user accepted. Nothing leaves the local network: no server, no cloud, no account (B1 rule 1). The app has no analytics, no tracking and no advertising, and sends no usage data to us [PROPOSAL].
+**What the user sees:** "*Phone-1* was removed. Your devices that are on now will refuse it. Devices that are switched off will refuse it after they next meet one of your devices; until then they may still accept it. If you turn one of them on away from your other devices, remove *Phone-1* there too. The phone still holds the data it had: change the passwords of your important accounts."
 
-## 7. Requirements (for B5 and A9)
-- SEC-1 The app must send feature data to a device only if it is trusted (C1) and that feature is switched on for that device.
-- SEC-2 The app must keep every feature off by default on each device.
-- SEC-3 The app must ask the user on the target device every time before screen sharing, remote control or extra screen starts.
-- SEC-4 The app must let another device delete files only if the owner turned on the delete permission, must re-check before deleting, and must log every delete for 30 days.
-- SEC-5 The app must encrypt the main database with a random key kept in the system key store, and the vault as C7 requires.
-- SEC-6 The app must never store other devices' photo previews, clipboard items or screen frames.
-- SEC-7 The app must accept a file list passed on by a third device only if the owner device's signature is valid.
-- SEC-8 The app must let the user remove a lost device from any other device and must offer to change the vault key.
-- SEC-9 The app must show the user, when a device is removed, that switched-off devices learn it only at their next contact (wording in section 5).
-- SEC-10 The app must ask for the system's fingerprint, face or PIN before changing the delete, password or control permissions.
-- SEC-11 The app must send no data outside the local network and collect no usage data.
+**The remaining gap.** A device that was off still trusts the lost device until it hears of the removal. Device Discovery, Pairing and Trust exchanges removal lists at every connection before anything else, and at start-up a device waits up to 5 seconds to reach the user's other devices before it accepts connections. The gap remains only if the lost device is the first device it meets. Without a server this gap cannot be closed, and the message above tells the user what to do.
 
-## Open points and who settles them
-The C1/C11 line (Mahmoud); signed file lists (Mohammed C3); the 5-second wait at start (Mahmoud C1); C10 approval (Ahmed); extra fields for B5: permission per feature and device, deletion log, signatures (Mohammed). **Phase 2 tests:** backup exclusion per system; the speed cost of encrypting the main database [NOT CHECKED].
+## 6. File channel
 
-## Sources (opened 8 Nov 2026)
-1. Zetetic, SQLCipher design (AES-256, HMAC-SHA512 per page, PBKDF2 default): https://www.zetetic.net/sqlcipher/design/
-2. Team files: `C1-device-discovery-pairing-trust.md` sections 1.7, 4, 8 (branch `claude/pairing-design`); `B1-architecture-v2.md` rules and decisions 9, 11; `B6-technology-final.md` (choices 3 and 5, point 6) and `B6-technology-v0.md` source 29; `C3-file-indexing.md` section 2 (branch `c3-file-indexing`); `C4-duplicate-detection.md` section 5; `C6-file-sharing.md` (on main); `C7-password-management.md`; `C8-clipboard-sync.md` (branch `c8-final`); `C9-screen-sharing-notes.md` (branch `c9-screen-sharing`).
+These answers settle the security questions of Direct File Sharing.
+
+- **A separate channel, in chunks, that can resume: yes.** Files travel on their own connection, apart from the message connection, in chunks of 1 MiB that the receiving device keeps when the connection drops; the connection uses Dart's own TLS sockets, like the message connection, so no extra library is needed. Reason: a large file must not hold up other messages, and a dropped connection then costs at most one chunk.
+- **A fingerprint for each chunk and for the whole file: both.** Each chunk carries its own SHA-256 fingerprint, and the finished file is checked with its full SHA-256 fingerprint. Reason: after a drop, the chunk fingerprints show which kept chunks are intact and belong to the same file, so only missing or damaged chunks are sent again; the full fingerprint confirms the finished file.
+- **Encrypted like the message connection: yes.** The file connection uses TLS 1.3 with the same certificate check and signed challenge, and it is opened only to a paired device for which Direct File Sharing is turned on. Reason: the contents of files are the most private data that the app moves.
+- **The duplicate-detection fingerprint reused for "You already have this file": yes.** The receiving device compares the file's size and full SHA-256 fingerprint with its own file list; if its file of the same size has no full fingerprint yet, it computes one first. Reason: both features then use one fingerprint, and no file is read twice.
+
+## 7. Privacy
+
+Data leaves a device only to the user's own paired devices, and only for features that the user has turned on. This data is: file lists (names, sizes, dates and fingerprints, never the contents), photo previews for the AI device (not kept), files that the user sends, clipboard text that the user allows, and screen images during a session that the user has accepted. Nothing leaves the local network: there is no server, no cloud and no account. The app has no analytics, no tracking and no advertising, and it sends no usage data to the developers.
+
+## 8. Requirements
+
+- FR-SEC-1 The app must send feature data to a device only if the device is paired and that feature is turned on for it.
+- FR-SEC-2 The app must keep every feature off by default on each device.
+- FR-SEC-3 The app must ask the user on the target device, every time, before Screen Sharing or Remote Control starts, and the user on both devices, every time, before Extra Screen starts.
+- FR-SEC-4 The app must let another device delete files only if the owner device has turned on "Allow my other devices to delete duplicates here", must check the file again before deleting it, and must record every deletion in a log kept for 30 days.
+- FR-SEC-5 The app must encrypt the main database with a random key that is kept in the operating system's key store, and the vault as Password Management requires.
+- FR-SEC-6 The app must never store the photo previews, clipboard items or screen images of other devices.
+- FR-SEC-7 The app must accept a file list only if the owner device's signature is valid and its change number is higher than the one it already holds.
+- FR-SEC-8 The app must let the user remove a lost device from any other device and must offer to change the vault key.
+- FR-SEC-9 The app must tell the user, when a device is removed, that switched-off devices learn of the removal only at their next contact (section 5).
+- FR-SEC-10 The app must ask for the system's fingerprint, face or PIN check before the permission to delete, the password settings or the permission to control a device is changed.
+- FR-SEC-11 The app must send no data outside the local network and must collect no usage data.
+
+## 9. Limitations
+
+The following has not yet been verified: that the app's data can be left out of cloud backups on each system, and how much the encryption of the main database slows search and synchronisation. Both are measured in the evaluation plan on Windows, Android and Ubuntu 24.04. macOS, iPhone and iPad cannot be built or tested by the team, because no member has a Mac; their key store and backup behaviour are checked against Apple's documentation only.
+
+## 10. Summary
+
+Security and Privacy keeps the user in control. Every feature starts off, each device is allowed only what the user turns on, and actions that cannot be undone, such as deletion and remote control, ask again. Stored data is encrypted with keys held by the operating system or made from the master password, and photo previews, clipboard items and screen images are never stored. A lost device can be removed from any other device, and the app states plainly what the removal cannot undo.
+
+## References (opened 8 and 13 November 2026)
+
+1. Zetetic, SQLCipher design (AES-256 and a message authentication code on every page): https://www.zetetic.net/sqlcipher/design/
+2. Team documents: Device Discovery, Pairing and Trust; Technology Choices (final); File Indexing and Offline-Device Records; Duplicate File Detection; Direct File Sharing; Password Management; Clipboard Synchronisation; Screen Sharing and Remote Control; Extra Screen; Implementation and Evaluation Plan.
