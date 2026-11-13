@@ -12,13 +12,13 @@ The app moves file lists, files, passwords and screen images between the user's 
 
 ## 2. Threats and protection
 
-The final technology choices already provide the base: TLS 1.3 in which each device checks the other's certificate and the connecting device proves its key with a signed challenge; SQLCipher for stored data; device keys in the operating system's key store; and no internet.
+The final technology choices already provide the base: TLS 1.3 in which the connecting device checks the other device's certificate and then proves its own key with a signed challenge; SQLCipher for stored data; device keys in the operating system's key store; and no internet.
 
 | Threat | Protection | What remains |
 |---|---|---|
 | **Someone on the same Wi-Fi** | The person can see announcements and can complete TLS on the normal port, but is refused at the signed challenge. The pairing port answers only while the user has a pairing window open, and pairing needs a code or QR code that a person checks. All traffic uses TLS 1.3 | The person learns that the app is running and sees the device ids, and can disturb discovery |
 | **A stolen phone that is unlocked** | Every feature is off until the user turns it on. The vault locks after 5 minutes and when the screen locks. Deleting files, showing passwords and allowing remote control ask for the fingerprint, face or PIN again (sections 3 and 5) | Whatever is open on the screen. The thief can use the features already allowed until the user removes the phone from another device |
-| **A paired device that misbehaves** | It receives only the features turned on for it. A delete request needs the owner device's own permission and is recorded in the deletion log. A device accepts a file list only if the owner device's signature is valid and its change number is higher than the one it already holds, so a device that passes a list on cannot change it | It can read what it was allowed to read, send false removal messages, and hold back or delay a list that it passes on |
+| **A paired device that misbehaves** | It receives only the features turned on for it. A delete request needs the owner device's permission or its user's confirmation, and is recorded in the deletion log. A device accepts a file list only if the owner device's signature is valid and its change number is higher than the one it already holds, so a device that passes a list on cannot change it | It can read what it was allowed to read, send false removal messages, and hold back or delay a list that it passes on |
 | **Malware on one device** | Keys are in the operating system's key store; the vault is locked most of the time; the main database is encrypted (section 4) | Malware running as the user can read memory while the app is open. On Windows, by inference, it can also read the key store. No app can fully prevent this |
 | **A lost device that was switched off** | The user removes it from any other device, and the removal is passed on | A device that was off still trusts the lost device until it meets another of the user's devices (section 5) |
 
@@ -31,7 +31,7 @@ Every feature is off by default on each device and for each pair of devices. "Wh
 | File Indexing and Offline-Device Records (sharing the file list) | Yes | The owner turns on "Share my list" for each device | Once |
 | Photo previews for the AI device | Yes | The owner of the photos | Once, with a switch for each device |
 | Duplicate File Detection: viewing groups | Uses the file lists | Not needed | Not needed |
-| Duplicate File Detection: deleting on another device | Yes | The owner turns on "Allow my other devices to delete duplicates here" | Once. Each deletion is still confirmed by the user, checked again, and recorded in a deletion log kept for 30 days on the owner device. On Android, photos and videos also show the system's own prompt; other Android files show the app's own confirmation |
+| Duplicate File Detection: deleting on another device | Yes | The owner turns on "Allow my other devices to delete duplicates here", or the user confirms each request on the owner device | Once, or for each request. Each deletion is still confirmed by the user, checked again, and recorded in a deletion log kept for 30 days on the owner device. On Android, photos and videos also show the system's own prompt; other Android files show the app's own confirmation |
 | Unified Search | Uses the file lists and the AI device | Not needed | Not needed |
 | Direct File Sharing | Yes | The receiving device | As Direct File Sharing describes |
 | Password Management | Yes | The user types the master password on each device that joins | Once for each device; the vault is unlocked in each session |
@@ -68,16 +68,16 @@ The lost device keeps its old copy, protected only by the old master password, a
 
 **What the user sees:** "*Phone-1* was removed. Your devices that are on now will refuse it. Devices that are switched off will refuse it after they next meet one of your devices; until then they may still accept it. If you turn one of them on away from your other devices, remove *Phone-1* there too. The phone still holds the data it had: change the passwords of your important accounts."
 
-**The remaining gap.** A device that was off still trusts the lost device until it hears of the removal. Device Discovery, Pairing and Trust exchanges removal lists at every connection before anything else, and at start-up a device waits up to 5 seconds to reach the user's other devices before it accepts connections. The gap remains only if the lost device is the first device it meets. Without a server this gap cannot be closed, and the message above tells the user what to do.
+**The remaining gap.** A device that was off still trusts the lost device until it hears of the removal. Device Discovery, Pairing and Trust exchanges removal lists at every connection before anything else. That design also proposes that, at start-up, a device waits up to 5 seconds to reach the user's other devices before it accepts connections, if any of them are known to be online. The gap remains only if the lost device is the first device it meets. Without a server this gap cannot be closed, and the message above tells the user what to do.
 
 ## 6. File channel
 
 These answers settle the security questions of Direct File Sharing.
 
-- **A separate channel, in chunks, that can resume: yes.** Files travel on their own connection, apart from the message connection, in chunks of 1 MiB that the receiving device keeps when the connection drops; the connection uses Dart's own TLS sockets, like the message connection, so no extra library is needed. Reason: a large file must not hold up other messages, and a dropped connection then costs at most one chunk.
+- **A separate channel, in chunks, that can resume: yes.** Files travel on their own file channel, apart from the control channel. The file is sent in chunks of 1 MiB, and the receiving device keeps its chunks when the connection drops. The file channel uses Dart's own TLS sockets, as the control channel does, so no extra library is needed. Reason: a large file must not hold up the control messages, and a dropped connection then costs at most one chunk.
 - **A fingerprint for each chunk and for the whole file: both.** Each chunk carries its own SHA-256 fingerprint, and the finished file is checked with its full SHA-256 fingerprint. Reason: after a drop, the chunk fingerprints show which kept chunks are intact and belong to the same file, so only missing or damaged chunks are sent again; the full fingerprint confirms the finished file.
-- **Encrypted like the message connection: yes.** The file connection uses TLS 1.3 with the same certificate check and signed challenge, and it is opened only to a paired device for which Direct File Sharing is turned on. Reason: the contents of files are the most private data that the app moves.
-- **The duplicate-detection fingerprint reused for "You already have this file": yes.** The receiving device compares the file's size and full SHA-256 fingerprint with its own file list; if its file of the same size has no full fingerprint yet, it computes one first. Reason: both features then use one fingerprint, and no file is read twice.
+- **Encrypted like the control channel: yes.** The file channel uses TLS 1.3 with the same certificate check and signed challenge. It is opened only to a paired device for which Direct File Sharing is turned on. Reason: the contents of files are the most private data that the app moves.
+- **The duplicate-detection fingerprint reused for "You already have this file": yes.** The receiving device compares the file's size and full SHA-256 fingerprint with its own file list. If its file of the same size has no full fingerprint yet, it computes one first. Reason: both features then use one fingerprint, and no file is read twice.
 
 ## 7. Privacy
 
@@ -88,18 +88,19 @@ Data leaves a device only to the user's own paired devices, and only for feature
 - FR-SEC-1 The app must send feature data to a device only if the device is paired and that feature is turned on for it.
 - FR-SEC-2 The app must keep every feature off by default on each device.
 - FR-SEC-3 The app must ask the user on the target device, every time, before Screen Sharing or Remote Control starts, and the user on both devices, every time, before Extra Screen starts.
-- FR-SEC-4 The app must let another device delete files only if the owner device has turned on "Allow my other devices to delete duplicates here", must check the file again before deleting it, and must record every deletion in a log kept for 30 days.
-- FR-SEC-5 The app must encrypt the main database with a random key that is kept in the operating system's key store, and the vault as Password Management requires.
-- FR-SEC-6 The app must never store the photo previews, clipboard items or screen images of other devices.
-- FR-SEC-7 The app must accept a file list only if the owner device's signature is valid and its change number is higher than the one it already holds.
-- FR-SEC-8 The app must let the user remove a lost device from any other device and must offer to change the vault key.
-- FR-SEC-9 The app must tell the user, when a device is removed, that switched-off devices learn of the removal only at their next contact (section 5).
-- FR-SEC-10 The app must ask for the system's fingerprint, face or PIN check before the permission to delete, the password settings or the permission to control a device is changed.
-- FR-SEC-11 The app must send no data outside the local network and must collect no usage data.
+- FR-SEC-4 The app must let another device delete files only if the owner device has turned on "Allow my other devices to delete duplicates here" or the user confirms the request on the owner device.
+- FR-SEC-5 The app must check a file again before deleting it and must record every deletion in a log kept for 30 days.
+- FR-SEC-6 The app must encrypt the main database with a random key that is kept in the operating system's key store, and the vault as Password Management requires.
+- FR-SEC-7 The app must never store the photo previews, clipboard items or screen images of other devices.
+- FR-SEC-8 The app must accept a file list only if the owner device's signature is valid and its change number is higher than the one it already holds.
+- FR-SEC-9 The app must let the user remove a lost device from any other device and must offer to change the vault key.
+- FR-SEC-10 The app must tell the user, when a device is removed, that switched-off devices learn of the removal only at their next contact (section 5).
+- FR-SEC-11 The app must ask for the system's fingerprint, face or PIN check before the permission to delete, the password settings or the permission to control a device is changed.
+- FR-SEC-12 The app must send no data outside the local network and must collect no usage data.
 
 ## 9. Limitations
 
-The following has not yet been verified: that the app's data can be left out of cloud backups on each system, and how much the encryption of the main database slows search and synchronisation. Both are measured in the evaluation plan on Windows, Android and Ubuntu 24.04. macOS, iPhone and iPad cannot be built or tested by the team, because no member has a Mac; their key store and backup behaviour are checked against Apple's documentation only.
+The following has not yet been verified: that the app's data can be left out of cloud backups on each system, and how much the encryption of the main database slows search and synchronisation. The evaluation plan measures the cost of the encryption on Windows, Android and Ubuntu 24.04. macOS, iPhone and iPad cannot be built or tested by the team, because no member has a Mac; their key store and backup behaviour are checked against Apple's documentation only.
 
 ## 10. Summary
 
