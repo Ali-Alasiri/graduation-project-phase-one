@@ -1,8 +1,8 @@
-# C4: Duplicate-file detection, questions the design must answer
+# Duplicate File Detection: questions the design answers
 
-Owner: Ali. Status: questions list, 31 Oct 2026 (was due Thu 29 Oct). Answered in `C4-duplicate-detection.md`. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
+These are the questions that the Duplicate File Detection design answers (`C4-duplicate-detection.md`).
 
-Starting points from others: every device keeps a copy of the other devices' file lists (path, name, size, date, type, hash; no contents) (C2); exact copies need no AI, similar files need the AI device (B1 rule 4); photo previews may go to the AI device, not kept, with a switch per device (approved in B1 v2's status line; decision 14 is still open on details); B1's safe assumption for decision 9, which C4 must turn into a decision: nothing is deleted without the user's confirmation, and only by the device that owns the file.
+Starting points: every device keeps a copy of the other devices' file lists (path, name, size, date, type and fingerprint, never the contents); exact copies need no AI, while similar files need the AI device; photo previews may go to the AI device, are not kept, and have a switch on each device; nothing is deleted without the user's confirmation, and only by the device that holds the file.
 
 ## A. Exact copies
 1. What counts as an exact copy: same bytes, whatever the name, folder or date?
@@ -25,12 +25,9 @@ Starting points from others: every device keeps a copy of the other devices' fil
 12. Which copy does the app suggest keeping, and when should it suggest nothing (a copy on two devices may be the user's backup)?
 13. Who deletes, and how: moved to the system's trash or deleted for good? Do Android and iOS show their own confirmation first?
 14. What if the owning device is off, the file changed since the scan, or the copy to keep is gone? How is the last copy never deleted?
-15. May one device ask another to delete while nobody is at the other device (a C11 permission)?
+15. May one device ask another to delete while nobody is at the other device (a Security and Privacy permission)?
 
 ## E. Storage
-16. What does C4 add to each device's index, and how big is it per 100,000 files?
+16. What does Duplicate File Detection add to each device's index, and how big is it per 100,000 files?
 17. Where are the groups, the "ignored" choices and the AI vectors kept; are they shared between devices?
-18. When are results computed again, how is an old result marked, and what happens when a device is removed (C1) or the AI device changes (C2)?
-
-## What C4 needs from others
-Mohammed (C2, C3, B5): new index fields and free space per device. Mahmoud (C1): "trusted device" for delete requests; a removed device's records. Ali (C11): the permission "my other devices may delete duplicates here". D1, D2: the duplicates screen and clean-up journey. Samer (C5): may reuse the AI device's photo vectors.
+18. When are results computed again, how is an old result marked, and what happens when a device is removed or the AI device changes?

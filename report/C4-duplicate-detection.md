@@ -1,95 +1,109 @@
-# C4: Duplicate-file detection (final)
+# Duplicate File Detection
 
-Owner: Ali. Status: final, 1 Nov 2026 (first version 31 Oct); agreements with Mohammed added 8 Nov (Open points). Points that wait for others are marked in "Open points"; they will be updated on this file if the owners answer. Answers the questions in `C4-duplicate-detection-questions.md` (numbers in brackets, Q1 to Q18) and B1 decision 9 [5]. Phase 1 is design only: no code. Names follow `B1-architecture-v2.md`; technology from `B6-technology-final.md`.
-**[PROPOSAL]** = a design choice or number to tune in Phase 2. **[NOT CHECKED]** = not confirmed in a primary source or by a test.
+## Introduction
 
-## 1. How it works in one paragraph
-Every device reads only **its own** files. From the shared file lists (C2) any device can find exact copies in three steps (same size, same partial hash, same full hash) and resized copies of a photo (close perceptual hashes). The AI device adds a third kind, "similar photos", from CLIP vectors made from small previews. The user sees the groups on any device, picks what to keep, and each file is deleted only by the device that owns it, after it checks that the copy being kept still exists.
+The same photos, videos and documents often end up on several of a user's devices, and on one device more than once. They take storage space without the user knowing. Duplicate File Detection finds these copies across all of the user's paired devices and shows them in one place, with the space that can be freed. It finds three kinds of copies: exact copies with the same content, the same photo saved in another size, and similar photos and videos, such as several shots of the same moment. The user decides what to keep. A file is deleted only by the device that holds it, after the user confirms, and only when the copy being kept has just been confirmed to exist, so the last copy of a file is never deleted. This section describes how copies are found, how they are shown, which copy the app suggests keeping, how deletion works, and what is stored.
 
-## 2. Exact copies (Q1 to Q4)
-- **Definition:** same size and same SHA-256 of the whole content, whatever the name, folder or date [Q1].
-- **Three steps, cheapest first [Q2]** (the same pipeline the open-source duplicate finder Czkawka uses: size, then a "prehash" over a small chunk from the start and the end, then a full hash, so most files never need a full hash [1]):
-  1. **Size**, from the shared lists, no file reading. A size found only once across all devices cannot have a copy.
-  2. **Partial hash**: SHA-256 of the first 4 KB + last 4 KB + the size [PROPOSAL, chunk size as Czkawka's cache [1]], computed by the owning device only for files whose size occurs more than once.
-  3. **Full SHA-256**, by the owning device, only for files that still match. Equal full hash = exact copy.
-- Each hash is cached with (path, size, modified date), so an unchanged file is never read twice. **Change for C2:** the hash field is filled only when step 3 needs it, not for every file; reading every byte on every device (for example 500 GB on a PC) would cost hours of disk and battery [NOT CHECKED, not measured]. Mohammed to agree.
-- **When:** desktops and laptops in the background; Android while the app is open or the "stay connected" mode is on; iPhone/iPad only while the app is open (B6 choice 6) [Q2].
-- **Left out [Q3]:** files under 64 KB [PROPOSAL, the user can change it]; system and app folders (the indexing scope is C3's); files the system does not let us read; files that are only in the cloud. For iPhone photos stored only in iCloud ("Optimize iPhone Storage"), reading the original would need the internet: they are shown as "not on this device" and skipped [NOT CHECKED: how the app detects this].
-- **Off devices [Q4]:** step 1 works from the stored lists alone. Steps 2 and 3 work only with hashes the off device computed before it went off; if a new file now matches a size that was unique back then, the group is shown as **"possible copy, check when *device* is back"** and confirmed when it reconnects. Records keep their date (C3).
+## 1. How it works
 
-## 3. Similar photos and videos (Q5 to Q8)
-Two methods, for two kinds of "similar" [Q5]:
+Every device reads only its own files. Every device also holds a copy of the file lists of the user's other devices, from File Indexing and Offline-Device Records. From these lists any device can find exact copies and copies of the same photo in another size. The AI device adds a third kind, similar photos and videos, from small previews. The user sees the groups on any device and chooses what to keep.
+
+## 2. Exact copies
+
+- **What counts as an exact copy.** Two files are exact copies when they have the same size and the same SHA-256 fingerprint of their whole content, whatever their names, folders or dates.
+- **Three steps, cheapest first.** The open-source duplicate finder Czkawka uses the same order, so that most files never need a full fingerprint.
+  1. **Size.** The sizes come from the file lists, so no file is read. A size that occurs only once across all devices cannot belong to a copy.
+  2. **Partial fingerprint.** The owner device computes the SHA-256 fingerprint of the first 4 KB, the last 4 KB and the size, only for files whose size occurs more than once.
+  3. **Full fingerprint.** The owner device computes the SHA-256 fingerprint of the whole file, only for files that still match. Equal full fingerprints mean an exact copy.
+- **Fingerprints are kept.** Each fingerprint is stored with the path, size and modified date of its file, so an unchanged file is never read twice. The full fingerprint is computed only when it is needed, because reading every byte of every file on every device would take hours of disk work and battery.
+- **When the work is done.** Computers and laptops work in the background. Android works while the app is open or while its "Stay connected" mode is on. iPhone and iPad work only while the app is open.
+- **Files that are left out.** Files under 64 KB (the user can change this limit), system and app folders, files that the system does not let the app read, and files that exist only in a cloud service. For example, an iPhone photo kept only in iCloud would need the internet to be read, so it is shown as "Not on this device" and is left out of the comparison.
+- **Devices that are switched off.** The size step works from the stored lists alone. The two fingerprint steps use the fingerprints that a device computed before it was switched off. If a new file now matches a size that was unique at that time, the group is shown as "Possible copy, check when *Laptop-1* is back", and it is confirmed when that device reconnects.
+
+## 3. The same photo in another size, and similar photos and videos
 
 | | **Same photo, other size** | **Similar photos** |
 |---|---|---|
-| Finds | resized, re-saved, re-compressed copies (e.g. sent by a chat app) | burst shots, small edits and crops, same scene |
-| Method | perceptual hash: Gradient, size 16 (16×16 = 256 bits, 32 bytes) per photo [PROPOSAL; Czkawka's suggested starting point: Gradient, size 16, max difference 5 [1]] | CLIP ViT-B/32 image vector, 512 numbers (B6 choice 4) |
-| Who computes | the owning device, while it indexes the photo | the AI device, from a preview |
-| Match | Hamming distance ≤ 5 [PROPOSAL] | cosine similarity ≥ 0.90 [PROPOSAL, tune on our own photos] |
-| Needs the AI device | no | yes |
+| What it finds | Resized, re-saved or re-compressed copies, for example a photo sent through a chat app | Several shots of the same moment, small edits and crops |
+| Method | A perceptual fingerprint (Gradient method, 16 × 16 = 256 bits, 32 bytes for each photo) | A CLIP ViT-B/32 image vector of 512 numbers |
+| Who computes it | The owner device, while it indexes the photo | The AI device, from a preview |
+| When two photos match | The fingerprints differ in 5 bits or fewer, and the photos have the same shape (width-to-height ratio within 2 %) | A similarity of 0.90 or more |
+| Needs the AI device | No | Yes |
 
-- **Previews for the AI device [Q6]** (B1 decision 14): the owning device sends one JPEG preview of **224 × 224 px** (resized so the short side is 224, then the centre cut out, which is CLIP's own input step [6]; proposed to Mohammed on 8 Nov, see Open points item 2) over the trusted connection; the AI device makes the vector and deletes the preview. It keeps only the vector and the file's hash; nothing goes back to other devices except the groups. Cost: about 2 hours per 100,000 photos on a 4-core, 8-thread laptop-class processor, plus making and sending previews, plus videos; then only new photos (B6 point 2, estimate).
-- **Comparing:** a new photo is compared with all stored vectors (100,000 × 512 multiplications, very small). A full rebuild compares all pairs as a matrix product in blocks: 100,000² ÷ 2 × 512 ≈ 2.6 × 10¹² multiply-adds, minutes on a laptop if run in ONNX Runtime [estimate, NOT CHECKED].
-- **Groups:** built around one photo; a photo joins only if it is similar to that photo, which avoids long chains of "A looks like B looks like C" [PROPOSAL].
-- **False groups [Q7]:** perceptual hashes ignore colour, so a black-and-white copy matches its colour original, and plain backgrounds match each other [1]. So the "same photo" group also needs equal aspect ratio (±2 %) [PROPOSAL], and "similar" groups are never deleted in bulk (section 5).
-- **Videos [Q8]:** exact copies by hash, as any file. Similar videos: the owning device sends 3 frames (at 10 %, 50 % and 90 % of the length) as 224 × 224 previews; two videos are similar if their lengths differ by 2 s or less and all three frame pairs pass the photo threshold [PROPOSAL]. Czkawka also samples frames and needs ffmpeg for it [1]; how our app takes frames on each system is [NOT CHECKED]. If it fails on phones, phones offer exact video copies only.
-- **AI device off [Q8]:** exact copies and "same photo" groups keep working; "similar" shows the last results and their date, as C2 designs.
+- **Previews for the AI device.** The owner device sends one JPEG preview of 224 × 224 pixels over the encrypted connection between paired devices. The short side of the photo is resized to 224 pixels and the centre is cut out, which is exactly the model's own input step. The AI device makes the vector and then deletes the preview. It keeps only the vector and the file's fingerprint, and it sends nothing back to other devices except the groups. A first build takes an estimated 2 hours for 100,000 photos on a 4-core, 8-thread laptop-class processor, plus the time to make and send the previews and to process videos. After that, only new photos are processed.
+- **Comparing.** A new photo is compared with all stored vectors, which is a small amount of work (100,000 × 512 multiplications). A full rebuild compares all pairs as one matrix product in blocks: 100,000² ÷ 2 × 512, about 2.6 × 10¹² multiply-adds, an estimated few minutes on a laptop with ONNX Runtime.
+- **Groups.** Each group is built around one photo. Another photo joins only if it is similar to that photo, which avoids long chains in which A looks like B and B looks like C, but A does not look like C.
+- **Avoiding false groups.** Perceptual fingerprints ignore colour, so a black-and-white copy matches its colour original, and plain backgrounds match each other. The "same photo" group therefore also requires the same shape, and similar groups are never deleted in bulk (section 5).
+- **Videos.** Exact copies of videos are found by fingerprint, like any other file. For similar videos, the owner device sends 3 frames, taken at 10 %, 50 % and 90 % of the video's length, as 224 × 224 previews. Two videos are similar when their lengths differ by 2 seconds or less and all three pairs of frames reach the photo threshold. If a phone cannot take frames from videos, that phone offers exact video copies only.
+- **When the AI device is off.** Exact copies and "same photo" groups keep working. The "Similar" tab shows the last results and their date, as described in AI Analysis.
 
-## 4. Showing the results (Q9 to Q11)
-- Three tabs: **Exact copies**, **Same photo, other size**, **Similar**. Each group is labelled **On one device** (usually waste) or **On several devices** (may be a backup) [Q9].
-- Each file: device name and kind, folder, size, date, resolution (photos), and a preview: from the file if it is on this device; requested from its device if online (not kept); none if the device is off ("Laptop is off, record from 28 Oct") [Q10].
-- At the top: space that can be freed, per device and in total. Per group: **Keep suggested**, **Choose what to delete**, **Ignore this group** (remembered, section 6). Bulk action only for exact copies on one device; never for "similar" [Q11].
+## 4. What the user sees
 
-## 5. Which copy is kept, and who deletes (Q12 to Q15, decision 9)
-**Recommendation [Q12]:**
-- *Exact, on one device:* suggest keeping one copy: first in the user's main folders (Pictures, Documents) over Downloads, temporary and chat-app folders; then the oldest modified date (likely the original); then the shortest path.
-- *Exact, on several devices:* suggest **keeping all** by default ("this may be your backup"). Offer "Free space on *device*": delete the copies on that device only where a copy stays on another device. Suggest the device with the least free space (needs free space in the device record, C3).
-- *Same photo / similar:* nothing is pre-selected. A star marks the best copy (highest resolution, then largest file, then newest), and the user ticks what to delete.
+- **Three tabs:** "Exact copies", "Same photo, other size" and "Similar". Each group is labelled "On one device" (usually wasted space) or "On several devices" (possibly a backup).
+- **Each file** shows its device name and kind, folder, size, date, resolution (for photos) and a preview. The preview comes from the file if it is on this device. It is requested from the other device if that device is online, and it is not kept. A device that is switched off shows no preview and a note such as "Laptop is off, record from 28 Oct".
+- **At the top,** the screen shows the space that can be freed, for each device and in total.
+- **For each group** the user can choose "Keep suggested", "Choose what to delete" or "Ignore this group". An ignored group is remembered (section 6). A bulk action is offered only for exact copies on one device, never for similar photos.
 
-**Who and how [Q13]:** only the device that **owns** the file deletes it, after the user confirmed (on any device). The file goes to the system's trash where there is one, not deleted for good [NOT CHECKED: trash access from Flutter on desktops]. On Android 11+, photos and videos go through the system's trash request (`createTrashRequest`), which shows its own prompt that the app opens from its screen; trashed items are kept typically 30 days [2][3]. This covers media items only. Other files on Android, and everything on Android 7 to 10 (no trash), are deleted directly with "All files access" (B6 v0, source 13), so the app asks once more in its own words that this cannot be undone [PROPOSAL]. Whether the `MANAGE_MEDIA` permission (Android 12+) skips the system prompt is [NOT CHECKED] [2]. On iPhone/iPad, photos are deleted through PhotoKit [4]; whether iOS shows its own prompt is [NOT CHECKED]. So deletes on a phone run only when the user has the app open there.
+## 5. Which copy is kept, and who deletes
 
-**Safety checks before every delete [Q14]:** the owning device (1) hashes its file again and stops if it changed; (2) confirms that the copy being kept still exists with the same hash: on the same device by reading it, on another device by asking that device now, over the trusted connection. If the other device does not answer, nothing is deleted: **the last copy is never deleted**.
+**Which copy the app suggests keeping:**
+- **Exact copies on one device:** keep one copy. The app prefers a copy in the user's main folders (Pictures, Documents) over Downloads, temporary folders and chat-app folders; then the oldest modified date, which is probably the original; then the shortest path.
+- **Exact copies on several devices:** keep all copies by default, with the note "This may be your backup". The app offers "Free space on *Phone-1*", which deletes the copies on that device only where a copy stays on another device. It suggests the device with the least free space.
+- **The same photo in another size, and similar photos:** nothing is selected in advance. A star marks the best copy (the highest resolution, then the largest file, then the newest), and the user ticks what to delete.
 
-**Owner off or nobody there [Q15]:** the request waits as "Waiting for Laptop". Each device has a switch, **"My other devices may delete duplicates here"**, off by default (permission for C11). If it is on, a desktop or laptop owner runs a waiting request within 7 days after the checks pass and shows a notice (phones still need their user, see above); if it is off, or the request is older, the owner asks its own user [PROPOSAL]. Every device keeps a deletion log for 30 days (what, when, asked by which device, which copy was kept) [PROPOSAL].
+**Who deletes and how.** Only the device that holds a file deletes it, after the user has confirmed on any device. The file is moved to the system's trash or recycle bin where there is one, not deleted for good.
+- **Android 11 and later:** photos and videos are moved to the trash through the system's own trash request, which shows its own prompt from the app's screen; trashed items are usually kept for 30 days. Other files on Android, and all files on Android 7 to 10 (which have no trash), are deleted directly with the "All files access" permission, so the app first asks once more, in its own words, that the deletion cannot be undone.
+- **iPhone and iPad:** photos are deleted through the photo library.
+- **Phones in general:** a deletion on a phone runs only while the user has the app open there.
 
-## 6. Storage (Q16 to Q18)
-- **Index (on every device, for every device's files, C3):** new: partial hash (32 bytes, candidates only) and perceptual hash (32 bytes, photos); C2's existing hash field holds the full SHA-256, filled only for candidates. At most 64 extra bytes per file, so up to about 6.4 MB per 100,000 files [estimate] [Q16].
-- **Groups:** exact and "same photo" groups are computed on each device from its own copy of the lists, so nothing extra is sent. "Similar" groups are sent by the AI device as small messages and kept with their date. The **ignore list** (each group stored as its members' hashes) is shared with all devices, so "ignore" works everywhere. **Vectors** stay on the AI device only: 2 KB per photo, about 200 MB per 100,000 photos; half with 16-bit numbers [PROPOSAL] [Q17].
-- **Recompute [Q18]:** when list changes arrive, only for the sizes and photos that changed. A new AI device rebuilds the vectors (C2). A removed device (C1): its files leave every group when its records are removed (C3 decides when).
+**Checks before every deletion.** The owner device first fingerprints its file again and stops if the file has changed. It then confirms that the copy being kept still exists with the same fingerprint: on the same device by reading it, and on another device by asking that device at that moment over the encrypted connection. If the other device does not answer, nothing is deleted. The last copy of a file is therefore never deleted.
 
-## 7. Sequence: free space on the phone, keep the laptop copy
-Editable source: `diagrams/C4-duplicate-sequence.drawio`; image: `diagrams/C4-duplicate-sequence.png`. Example on an Android phone; on a desktop step 12 is the system's trash and steps 13 and 14 do not happen; on iPhone/iPad the PhotoKit delete is used (prompt [NOT CHECKED]).
+**When the owner device is off or nobody is there.** The request waits and is shown as "Waiting for *Laptop-1*". Each device has a switch, "Allow my other devices to delete duplicates here", which is off by default. When it is on, a computer or laptop runs a waiting request within 7 days, after the checks pass, and shows a notice. Phones still need their user, as described above. When the switch is off, or the request is older than 7 days, the owner device asks its own user. Every device keeps a deletion log for 30 days, recording what was deleted, when, at the request of which device, and which copy was kept.
 
-![C4 sequence diagram: free space on the phone, keep the laptop copy](../diagrams/C4-duplicate-sequence.png)
+## 6. What is stored
 
-In words: the phone asks the laptop, through both communication layers and over the trusted connection (C1), whether the copy to keep still exists with hash H (steps 4 to 10). Only if the laptop answers yes and the phone's own copy still has hash H does the phone send the trash request; Android shows its own prompt (steps 12 to 15). Otherwise nothing is deleted (step 18).
+- **In the file lists, on every device:** two new fields, a partial fingerprint (32 bytes, only for possible copies) and a perceptual fingerprint (32 bytes, photos only). The existing fingerprint field holds the full SHA-256 fingerprint and is filled only when it is needed. This adds at most 64 bytes for each file, an estimated 6.4 MB for 100,000 files.
+- **Groups:** exact and "same photo" groups are computed on each device from its own copy of the lists, so nothing extra is sent. Similar groups are sent by the AI device as small messages and are kept with their date.
+- **The list of ignored groups:** each ignored group is stored as the fingerprints of its members and is shared with all devices, so a group ignored on one device is ignored everywhere.
+- **Vectors:** they stay on the AI device only, 2 KB for each photo, about 200 MB for 100,000 photos, or half that with 16-bit numbers.
+- **Updating:** when list changes arrive, only the sizes and photos that changed are checked again. A new AI device builds the vectors again. When a device is removed, its files leave every group as soon as its list is deleted.
 
-## 8. Requirements (for A8 and A9)
-- FR-C4-1 Exact copies are files with equal size and equal SHA-256; only the owning device reads a file.
-- FR-C4-2 A full hash is computed only for files that match another file in size and partial hash.
-- FR-C4-3 Resized copies of a photo are found with a perceptual hash, without the AI device.
-- FR-C4-4 Similar photos are found by the AI device from previews that it deletes after use.
-- FR-C4-5 Groups are shown as exact, same photo or similar, and as on one device or on several devices, with the space that can be freed.
-- FR-C4-6 A file is deleted only by its owning device, after user confirmation, after re-hashing it and confirming that the kept copy still exists; otherwise nothing is deleted.
-- FR-C4-7 Deleted files go to the system trash where the system has one.
-- FR-C4-8 An ignored group does not appear again on any device.
-- NFR-C4-1 Exact-copy detection works with no other device online, from the last records; matches that need a missing hash are shown as "possible" until the device returns.
-- NFR-C4-2 No file content leaves its device except previews for the AI device, which are not stored (B1 v2).
-- NFR-C4-3 A first AI build of 100,000 photos takes about 2 hours of model time on a 4-core, 8-thread laptop-class processor, previews and videos not included [estimate].
+## 7. Freeing space on the phone while keeping the laptop copy
 
-## Open points and who settles them
-**Agreements proposed to Mohammed (C2/C3), 8 Nov 2026** (points 1 and 3 follow Mahmoud's suggestions; waiting for Mohammed to confirm and update C2/C3):
-1. **Full hash:** C4's rule. The hash field in C3 is "filled when needed" (empty until a file matches another in size and partial hash), and C3 adds C4's two fields: partial hash (32 bytes) and perceptual hash (32 bytes, photos). **Free space:** C4 needs, per device, the free and total bytes of the storage that holds the scanned files, updated at each scan and each connect, in the device record (C3, B5). It is used only to suggest which device to free (section 5).
-2. **Preview size: 224 × 224** (C2's number). It is exactly the model's input (CLIP resizes the short side to 224 and cuts out the centre [6]), so a larger preview would only be shrunk on the AI device; it is also the smaller transfer. C4 and B6 final changed from 256.
-3. **Videos:** C4 stays (3 frames per video, section 3); C2 changes "not in the first version" to C4's rule, with frame taking per system still [NOT CHECKED].
-4. **Rebuild time** for C2: "about 2 hours per 100,000 photos on a 4-core, 8-thread laptop-class processor (measured on an Intel i7-8559U mini PC), from a published measurement of the same image model (14.8 previews per second, CPU only); our estimate, not measured on ONNX Runtime; previews and videos not included" (B6 final, point 2).
+**Figure: freeing space on the phone while keeping the laptop copy.** Source file: `diagrams/C4-duplicate-sequence.drawio`.
 
-**Waiting for answers:** the delete permission and the log (Ali, C11); the duplicates screen (D1). **Phase 2 tests:** thresholds 5 and 0.90 on our own photos; taking video frames on each system; the iOS delete prompt; trash access from Flutter on desktops.
+![Duplicate File Detection: freeing space on the phone, keeping the laptop copy](../diagrams/C4-duplicate-sequence.png)
 
-## Sources (opened 31 Oct 2026; source 6 on 8 Nov 2026)
-1. Czkawka documentation: FAQ (size, prehash and full hash pipeline; perceptual hash algorithms, hash size and thresholds; greyscale matches; similar videos with ffmpeg), Instruction (prehash = first and last 4 KB), Instruction_CLI (starting values): https://github.com/qarmin/czkawka/tree/master/instructions
-2. Android `MediaStore.java` (`createTrashRequest`, `createDeleteRequest`, `IS_TRASHED`, "default trashed expiration is typically 30 days"), AOSP mirror: https://github.com/aosp-mirror/platform_packages_providers_mediaprovider/blob/main/apex/framework/java/android/provider/MediaStore.java
-3. Android API 30 differences, `MediaStore` (both methods added in API 30): https://developer.android.com/sdk/api_diff/30/changes/android.provider.MediaStore
+The example uses an Android phone. The user chooses to delete the phone copy and keep the laptop copy, and confirms. The phone checks that the laptop is a paired device and asks it, over the paired connection, whether the copy to keep still exists with fingerprint H (steps 5 to 11). Only if the laptop answers yes, and the phone's own copy still has fingerprint H, does the phone send the trash request; Android then shows its own prompt (steps 12 to 16). The phone updates its list, records the deletion in the log and sends the change to the other devices. Otherwise nothing is deleted, and the user sees "Cannot confirm the laptop copy now. Nothing was deleted." (steps 19 and 20). On a computer, step 13 moves the file to the recycle bin or trash, and steps 14 and 15 do not happen. On an iPhone or iPad, the photo library deletes the photo.
+
+## 8. Requirements
+
+- FR-DUP-1 The app must treat files with the same size and the same SHA-256 fingerprint as exact copies, and only the device that holds a file may read it.
+- FR-DUP-2 The app must compute a full fingerprint only for files that match another file in size and in partial fingerprint.
+- FR-DUP-3 The app must find resized copies of a photo with a perceptual fingerprint, without the AI device.
+- FR-DUP-4 The app must find similar photos on the AI device from previews that the AI device deletes after use.
+- FR-DUP-5 The app must show groups as exact, same photo or similar, and as on one device or on several devices, with the space that can be freed.
+- FR-DUP-6 The app must delete a file only on the device that holds it, and only after the user has confirmed, the file has been fingerprinted again and the kept copy has been found to still exist; for a request from another device, it must also require that the owner device has turned on "Allow my other devices to delete duplicates here" (off by default) or that the user confirms on the owner device; it must never delete the last copy, and it must record every deletion in a log kept for 30 days.
+- FR-DUP-7 The app must move deleted files to the system's trash or recycle bin where the system has one.
+- FR-DUP-8 The app must not show an ignored group again on any device.
+- NFR-DUP-1 The app must find exact copies with no other device online, from the last lists, and must show a match that still needs a missing fingerprint as "possible" until the device returns.
+- NFR-DUP-2 The app must not let any file content leave its device, except previews for the AI device, which are not stored.
+- NFR-DUP-3 The app must complete a first AI build of 100,000 photos in about 2 hours of model time on a 4-core, 8-thread laptop-class processor, without the previews and the videos.
+
+## 9. Limitations
+
+The thresholds of 5 bits and 0.90 are starting values that will be tuned on the team's own photos. The following has not yet been verified: the first build time with ONNX Runtime (the figure comes from a published measurement of the same image model on an Intel i7-8559U processor, at 14.8 previews per second); how frames are taken from videos on each system; the delete prompt on iPhone and iPad; and access to the recycle bin from Flutter on computers. iPhone, iPad and macOS cannot be built or tested by the team, because no member has a Mac. The duplicates screen follows the screen designs.
+
+## 10. Summary
+
+Duplicate File Detection shows the user where the same files take space twice, across all of their devices. Exact copies are found cheaply from the file lists, by size first and then by fingerprint, and resized photos are found without the AI device. The AI device adds similar photos and videos from small previews that it does not keep. The app suggests what to keep but never decides alone: copies on several devices are kept by default, every deletion is checked again, and the last copy of a file is never deleted.
+
+## References (opened 31 October and 8 November 2026)
+
+1. Czkawka documentation (size, partial and full fingerprint steps; perceptual fingerprint methods and thresholds; greyscale matches; similar videos with ffmpeg): https://github.com/qarmin/czkawka/tree/master/instructions
+2. Android, `MediaStore.java` (`createTrashRequest`, `IS_TRASHED`, "default trashed expiration is typically 30 days"), AOSP mirror: https://github.com/aosp-mirror/platform_packages_providers_mediaprovider/blob/main/apex/framework/java/android/provider/MediaStore.java
+3. Android, API 30 differences for `MediaStore` (both requests added in API 30): https://developer.android.com/sdk/api_diff/30/changes/android.provider.MediaStore
 4. Apple, `PHAssetChangeRequest.deleteAssets(_:)`: https://developer.apple.com/documentation/photos/phassetchangerequest/deleteassets(_:)
-5. Team files: `B6-technology-final.md` (choices 4 and 6, points 2 and 5), `C2-ai-node.md` (Q1, Q2), `B1-architecture-v2.md` (rules 1 to 4, decisions 9 and 14).
-6. OpenAI CLIP, `clip/clip.py` (`_transform`: resize to the input size, then centre crop): https://github.com/openai/CLIP/blob/main/clip/clip.py
+5. OpenAI CLIP, `clip/clip.py` (resize to the input size, then centre crop): https://github.com/openai/CLIP/blob/main/clip/clip.py
+6. Mustafa.net, "Immich without a GPU" (measured on 10 October 2026): https://mustafa.net/2026/10/10/immich-without-gpu-intel-nuc/
+7. Team documents: Technology Choices (final); AI Analysis; File Indexing and Offline-Device Records; Security and Privacy; Implementation and Evaluation Plan.
