@@ -13,7 +13,7 @@ Starting points: every device keeps a copy of the other devices' file lists (pat
 ## B. Similar photos and videos
 5. What is "similar": the same photo resized or saved again, a crop or edit, a burst of nearly identical shots? Which method finds which kind, and which part works without the AI device?
 6. How does the AI device see photos stored on other devices, and what does it keep afterwards?
-7. When are two photos "similar enough", and how do we avoid false groups (black-and-white versions, plain backgrounds, screenshots of the same app)?
+7. When are two photos "similar enough", and how are false groups avoided (black-and-white versions, plain backgrounds, screenshots of the same app)?
 8. How are videos compared? What does the user see while the AI device is off?
 
 ## C. Showing the results

@@ -74,7 +74,7 @@ Every device reads only its own files. Every device also holds a copy of the fil
 
 ![Duplicate File Detection: freeing space on the phone, keeping the laptop copy](../diagrams/C4-duplicate-sequence.png)
 
-The example uses an Android phone. The user chooses to delete the phone copy and keep the laptop copy, and confirms. The phone checks that the laptop is a paired device and asks it, over the paired connection, whether the copy to keep still exists with fingerprint H (steps 5 to 11). Only if the laptop answers yes, and the phone's own copy still has fingerprint H, does the phone send the trash request; Android then shows its own prompt (steps 12 to 16). The phone updates its list, records the deletion in the log and sends the change to the other devices. Otherwise nothing is deleted, and the user sees "Cannot confirm the laptop copy now. Nothing was deleted." (steps 19 and 20). On a computer, step 13 moves the file to the recycle bin or trash, and steps 14 and 15 do not happen. On an iPhone or iPad, the photo library deletes the photo.
+The example uses an Android phone. The user chooses to delete the phone copy and keep the laptop copy, and confirms. The phone asks the laptop, over the paired connection, whether the copy to keep still exists with fingerprint H (steps 5 to 9). The phone sends the trash request only if the laptop answers yes and the phone's own copy still has fingerprint H. Android then shows its own prompt (steps 10 to 14). The phone updates its list, records the deletion in the log and sends the change to the other devices. Otherwise nothing is deleted, and the user sees "Cannot confirm the laptop copy now. Nothing was deleted." (step 17). On a computer, step 11 moves the file to the recycle bin or trash, and steps 12 and 13 do not happen. The laptop's own internal steps are shown inside the single "Paired device" lane. On an iPhone or iPad, the photo library deletes the photo.
 
 ## 8. Requirements
 
@@ -83,16 +83,18 @@ The example uses an Android phone. The user chooses to delete the phone copy and
 - FR-DUP-3 The app must find resized copies of a photo with a perceptual fingerprint, without the AI device.
 - FR-DUP-4 The app must find similar photos on the AI device from previews that the AI device deletes after use.
 - FR-DUP-5 The app must show groups as exact, same photo or similar, and as on one device or on several devices, with the space that can be freed.
-- FR-DUP-6 The app must delete a file only on the device that holds it, and only after the user has confirmed, the file has been fingerprinted again and the kept copy has been found to still exist; for a request from another device, it must also require that the owner device has turned on "Allow my other devices to delete duplicates here" (off by default) or that the user confirms on the owner device; it must never delete the last copy, and it must record every deletion in a log kept for 30 days.
-- FR-DUP-7 The app must move deleted files to the system's trash or recycle bin where the system has one.
-- FR-DUP-8 The app must not show an ignored group again on any device.
+- FR-DUP-6 The app must delete a file only on the device that holds it, and only after the user has confirmed, the file has been fingerprinted again and the kept copy has been found to still exist.
+- FR-DUP-7 For a deletion requested by another device, the app must also require that the owner device has turned on "Allow my other devices to delete duplicates here" (off by default) or that the user confirms on the owner device.
+- FR-DUP-8 The app must never delete the last copy of a file, and it must record every deletion in a log kept for 30 days on the owner device.
+- FR-DUP-9 The app must move deleted files to the system's trash or recycle bin where the system has one.
+- FR-DUP-10 The app must not show an ignored group again on any device.
 - NFR-DUP-1 The app must find exact copies with no other device online, from the last lists, and must show a match that still needs a missing fingerprint as "possible" until the device returns.
 - NFR-DUP-2 The app must not let any file content leave its device, except previews for the AI device, which are not stored.
 - NFR-DUP-3 The app must complete a first AI build of 100,000 photos in about 2 hours of model time on a 4-core, 8-thread laptop-class processor, without the previews and the videos.
 
 ## 9. Limitations
 
-The thresholds of 5 bits and 0.90 are starting values that will be tuned on the team's own photos. The following has not yet been verified: the first build time with ONNX Runtime (the figure comes from a published measurement of the same image model on an Intel i7-8559U processor, at 14.8 previews per second); how frames are taken from videos on each system; the delete prompt on iPhone and iPad; and access to the recycle bin from Flutter on computers. iPhone, iPad and macOS cannot be built or tested by the team, because no member has a Mac. The duplicates screen follows the screen designs.
+The thresholds of 5 bits and 0.90 are starting values that will be tuned on the team's own photos. The following has not yet been verified: the first build time with ONNX Runtime (the figure comes from a published measurement of the same image model on an Intel i7-8559U processor, at 14.8 previews per second); how frames are taken from videos on each system; the delete prompt on iPhone and iPad; whether the `MANAGE_MEDIA` permission (Android 12 and later) skips Android's own prompt; how the app detects photos that are kept only in iCloud; and access to the recycle bin from Flutter on computers. iPhone, iPad and macOS cannot be built or tested by the team, because no member has a Mac.
 
 ## 10. Summary
 
